@@ -178,14 +178,11 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
               if { $protocol == "tcp" || $protocol == "udp" } {
                   if { [regexp -nocase {\:} $ipdest ] } {
                        set destsplit [ split $ipdest {:} ]
-                       set f 8
                        set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
                     if {[regexp -nocase {any} $ipdest]} {
-                      set g 9
                        set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
                        
                     } else {
-                      set g 10
                        set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
 
                     }
@@ -202,14 +199,11 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
               if { $protocol == "tcp" || $protocol == "udp" } {
                 if { [regexp -nocase {\:} $ipsource ] } {
                     set sourcesplit [ split $ipsource {:} ]
-                    set f 4
                     set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
                     if {[regexp -nocase {any} $ipsource]} {
                         set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                        set g 3
                     } else {
                         set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                      set g 5
                     }
                 } else {
                     set source_dest " permit $protocol any host $ipsource"
@@ -328,22 +322,16 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
               if { $protocol == "tcp" || $protocol == "udp" } {
                   if { [regexp -nocase {\:} $ipdest ] } {
                        set destsplit [ split $ipdest {:} ]
-                       set f 8
                        set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
                     if {[regexp -nocase {any} $ipdest]} {
-                      set g 9
                        set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                       
                     } else {
-                      set g 10
                        set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-
                     }
                   } else {
                        set source_dest " permit $protocol any host $ipdest"
                        set dest_source " permit $protocol host $ipdest any"
                   }
-              
               } else {
                 set source_dest "permit ip any host $ipdest"
                 set dest_source "permit ip host $ipdest any"
@@ -352,14 +340,11 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
               if { $protocol == "tcp" || $protocol == "udp" } {
                 if { [regexp -nocase {\:} $ipsource ] } {
                     set sourcesplit [ split $ipsource {:} ]
-                    set f 4
                     set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
                     if {[regexp -nocase {any} $ipsource]} {
                         set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                        set g 3
                     } else {
                         set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                      set g 5
                     }
                 } else {
                     set source_dest " permit $protocol any host $ipsource"
