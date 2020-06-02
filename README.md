@@ -2,6 +2,9 @@
 TCL script to automate Embedded Packet Capture (EPC) in Cisco platforms
 
 Create cisco alias: </br>
+Upload capture_program.tcl to flash of Cisco device</br>
+<b>scp capture_program.tcl \<username>@\<deviceip>:capture_program.tcl</b></br>
+</br>
 <b>config t</b></br>
 <b>alias exec wireshark tclsh flash:capture_program.tcl</b>
 
