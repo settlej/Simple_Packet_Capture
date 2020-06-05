@@ -41,11 +41,19 @@ proc progressbar {cur tot count} {
     puts -nonewline stderr $str
 }
 
-
-proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration {}} {size {}} } {
+proc clear_screen {} {
     ios_config "line vty 0 15" "international"
     puts "\x1B\x5B\x32\x4A\x1B\x5B\x30\x3B\x30\x48"
-	ios_config "line vty 0 15" "no international"
+    ios_config "line vty 0 15" "no international"
+}
+
+proc debugputs {msg} {
+    if {$debug == 1} {
+       puts $msg
+    }
+}
+
+proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration {}} {size {}} } {
     if {$sinterface == "nothing"} {
         puts "\nCapture Type:\n  1.\) Interface \[default\]\n  2.\) Control-Plane"
         puts -nonewline "\nSelection: "
@@ -58,7 +66,7 @@ proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration
         # get list of interfaces
         if {$ctype == "Interface"} { 
              puts "\nAvailable Interfaces:"
-			 set foundinterfaces [regexp -all -inline {[A-Za-z]+\d\/+[\d\/]+\s} [exec "show ip int br"]] 
+             set foundinterfaces [regexp -all -inline {[A-Za-z]+\d\/+[\d\/]+\s} [exec "show ip int br"]] 
              #set foundinterfaces [regexp -all -inline {([A-Za-z]+\d\/)+[\d\/]+} [exec "show ip int br"]]
              foreach {a b c d e f g} [join $foundinterfaces ","] {puts "$a $b $c $d $e $f $g"} 
              set i 0
@@ -101,16 +109,16 @@ proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration
 
 proc versionsearch {version protocol ipsource ipdest ctype sinterface duration size} {
     switch -glob $version {
-       9* {capture_commands9000 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
-	   44* {capture_commands4400 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
-	   1004 {capture_commands4400 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
-	   45* {capture_commands4500 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
-       38* {capture_commands3800 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
-       3* {capture_commands3000 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+       9*   {capture_commands9000 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+       44*  {capture_commands4400 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+       1004 {capture_commands4400 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+       45*  {capture_commands4500 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+       38*  {capture_commands3800 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+       3*   {capture_commands3000 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
        100* {capture_commands1000 $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
        default {puts "Unsupported Version!"}
-      }
-  }
+    }
+}
 
 
 proc startcapture {version protocol ipsource ipdest ctype sinterface duration size} {
@@ -118,757 +126,555 @@ proc startcapture {version protocol ipsource ipdest ctype sinterface duration si
       puts [string repeat - 37]
       if {$sinterface != "nothing" || $sinterface == "control"} {
         puts "Capture: $sinterface \nDuration: $duration Sec \nFile Size: $size MB"
-        } else {
+      } else {
         puts "Capture Type: Control-Plane \nDuration: $duration Sec \nFile Size: $size MB"
-        }
+      }
       if { $ipsource == "any" && $ipdest == "any" } {
         puts "Capture ACL: $protocol any any"
       } else {
           puts "Capture ACL: $protocol $ipsource $ipdest 
-		  $protocol $ipdest $ipsource"
+          $protocol $ipdest $ipsource"
       }
       puts "Capture location: flash:CAPTURE.pcap"
       puts [string repeat - 37]
       puts ""
-	  if {$protocol == "ip" && $ipsource == "any" && $ipdest == "any"} {
-	  puts "****WARNING!**** Using \"ip any any\" may create stress on CPU, if possible try to limit to tcp/udp/eigrp/ospf/icmp.
-	         Also make sure time duration is at a reasonable time if monitoring high load interface."}
-      if {[expr $duration > 300]} {puts "***TERMINIATING! Duration is greater than 300 sec ***"; return}
+      if {$protocol == "ip" && $ipsource == "any" && $ipdest == "any"} {
+          puts "****WARNING!**** Using \"ip any any\" may create stress on CPU, if possible try to limit to tcp/udp/eigrp/ospf/icmp.
+          Also make sure time duration is at a reasonable time if monitoring high load interface."
+      }
+      if {[expr $duration > 300]} {
+          puts "***TERMINIATING! Duration is greater than 300 sec ***"; return
+      }
       if [catch {exec "dir flash: | i free"} result] {
-	        set result [exec "dir bootflash: | i free"]
-			} 
-      set flashsize $result	  
+          set result [exec "dir bootflash: | i free"]
+      } 
+      set flashsize $result   
       set bytesizefree [lindex [regexp -all -inline {\S+} [lindex [split $flashsize {(}] 1]] 0]
-	  set bytesizefree "${bytesizefree}.0"
-	  if {[expr [expr $bytesizefree - $size] < 10000]} {puts "***TERMINATING! Not enought Free Space Available*** "; return}
-	  if {[expr $size > 99]} {puts "***TERMINATING! Size is greater than 99 MB ***"; return}
-      if {[expr $duration > 120]} {puts "***WARNING! Greater than 120 sec capture, use with Caution ***"}
-	  if {[expr $size > 70]} {puts "***WARNING! File size greater than 70 MB will be saved to flash make sure flash has enough room!***"}
-	  puts ""
+      set bytesizefree "${bytesizefree}.0"
+      if {[expr [expr $bytesizefree - $size] < 10000]} {
+         puts "***TERMINATING! Not enought Free Space Available*** "; return
+      }
+      if {[expr $size > 99]} {
+         puts "***TERMINATING! Size is greater than 99 MB ***"; return
+      }
+      if {[expr $duration > 120]} {
+         puts "***WARNING! Greater than 120 sec capture, use with Caution ***"
+      }
+      if {[expr $size > 70]} {
+         puts "***WARNING! File size greater than 70 MB will be saved to flash make sure flash has enough room!***"
+      }
+      puts ""
       puts -nonewline "Start? \[yes\|no\]: "
       flush stdout
       gets stdin {start}
       switch -glob $start {
-        y* {versionsearch $version $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
-        default {
-          puts "\nCanceling!"
-        }
-      }
+        y* { versionsearch $version $protocol $ipsource $ipdest $ctype $sinterface $duration $size}
+        default { puts "\nCanceling!" }
+    }
 }
-	
-
+  
+proc acl_generator {protocol ipsource ipdest} {
+    if { $ipsource == "any" && $ipdest == "any" } {
+          set any_s_d " permit $protocol any any"
+    } else {
+          if { $ipsource != "any" && $ipdest != "any" } {
+              if { $protocol == "tcp" || $protocol == "udp" } {
+                  if { [regexp {\:} $ipsource] && [regexp {\:} $ipdest] } {
+                      set sourcesplit [ split $ipsource {:} ]
+                      set destsplit [ split $ipdest {:} ]
+                      if {[regexp -nocase {any} $ipdest] || [regexp -nocase {any} $ipsource]} {
+                          if {[regexp -nocase {any} $ipdest]} {
+                              set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                              set dest_source "permit $protocol [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                          } else {
+                              set source_dest "permit $protocol [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                              set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                          }
+                      } else {
+                              set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                              set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                             }
+                      
+                        
+                  } else { 
+                      if { [regexp {\:} $ipsource] || [regexp {\:} $ipdest] } {
+                          if { [regexp {\:} $ipsource] } {
+                               set sourcesplit [ split $ipsource {:} ]
+                               if {[regexp -nocase {any} $ipsource] } {
+                                      if {[regexp -nocase {any} $ipsource] } {
+                                        set source_dest "permit $protocol [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
+                                        set dest_source "permit $protocol host $ipdest [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                                      } else {
+                                        set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] $ipdest"
+                                        set dest_source "permit $protocol $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                                      }
+                               } else {
+                                  # set destsplit [ split $ipdest {:} ]
+                                   if {[regexp -nocase {any} $ipdest] } {
+                                      set source_dest "permit $protocol $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                                      set dest_source "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] $ipdest"
+                                   } else {
+                                      set source_dest "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                                      set dest_source "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
+                                   }
+                               }
+                          } else {
+                                  set destsplit [ split $ipdest {:} ]
+                                  if {[regexp -nocase {any} $ipdest] } {
+                                           set source_dest "permit $protocol [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
+                                           set dest_source "permit $protocol host $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                                  } else {
+                                           set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
+                                           set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                                  }
+                          }
+                      } else {
+                              set source_dest "permit $protocol host $ipsource host $ipdest"
+                              set dest_source "permit $protocol host $ipdest host $ipsource"
+                      }
+                  }
+              } else {
+                set source_dest "permit ip host $ipsource host $ipdest"
+                set dest_source "permit ip host $ipdest host $ipsource"
+                }
+        } else {
+              if { $ipsource == "any" && $ipdest != "any" } {
+                  if { $protocol == "tcp" || $protocol == "udp" } {
+                      if { [regexp {\:} $ipdest ] } {
+                           set destsplit [ split $ipdest {:} ]
+                           if {[regexp -nocase {any} $ipdest]} {
+                              set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                              set dest_source "permit $protocol [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
+                           } else {
+                              set source_dest "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
+                              set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
+                           }
+                      } else {
+                           set source_dest " permit $protocol any host $ipdest"
+                           set dest_source " permit $protocol host $ipdest any"
+                      }
+                  } else {
+                    set source_dest "permit ip any host $ipdest"
+                    set dest_source "permit ip host $ipdest any"
+                  }
+              } else {
+                  if { $protocol == "tcp" || $protocol == "udp" } {
+                      if { [regexp {\:} $ipsource ] } {
+                          set sourcesplit [ split $ipsource {:} ]
+                          if {[regexp -nocase {any} $ipsource]} {
+                              set source_dest "permit $protocol [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] $ipdest"
+                              set dest_source "permit $protocol $ipdest [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                          } else {
+                              set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] $ipdest"
+                              set dest_source "permit $protocol $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
+                          }
+                      } else {
+                          set source_dest " permit $protocol any host $ipsource"
+                          set dest_source " permit $protocol host $ipsource any"
+                      }
+                  } else {
+                    set source_dest "permit ip host $ipsource any"
+                    set dest_source "permit ip $ipdest any host $ipsource"
+                  }
+              }
+          }
+      }
+  if {[info exists any_s_d]} {
+      return $any_s_d
+  } else {
+      return "$source_dest:$dest_source"
+  }
+}
 
 proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration size} {
-  exec "monitor capture point stop all"
-  ios_config "no access-list 199" 
-  ios_config "access-list 199"
-  if { $ipsource == "any" && $ipdest == "any" } {
-        set any_s_d " permit $protocol any any"
-  } else {
-        if { $ipsource != "any" && $ipdest != "any" } {
-           if { $protocol == "tcp" || $protocol == "udp" } {
-                    if { [regexp -nocase {\:} $ipsource] && [regexp -nocase {\:} $ipdest] } {
-                          set sourcesplit [ split $ipsource {:} ]
-                          set destsplit [ split $ipdest {:} ]
-                          set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                          set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                          
-                    } else { 
-                         if { [regexp -nocase {\:} $ipsource] || [regexp -nocase {\:} $ipdest] } {
-                                  if { [regexp -nocase {\:} $ipsource] } {
-                                         set sourcesplit [ split $ipsource {:} ]
-                                         set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
-                                         set dest_source "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                                 } else {
-                                         set destsplit [ split $ipdest {:} ]
-                                         set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
-                                         set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                                        }
-                                 }
-                            }
-             } else {
-                     set source_dest "permit ip host $ipsource host $ipdest"
-                     set dest_source "permit ip host $ipdest host $ipsource"
-                    }
-      } else {
-            if { $ipsource == "any" && $ipdest != "any" } {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                  if { [regexp -nocase {\:} $ipdest ] } {
-                       set destsplit [ split $ipdest {:} ]
-                       set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    if {[regexp -nocase {any} $ipdest]} {
-                       set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    } else {
-                       set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-                    }
-                  } else {
-                       set source_dest " permit $protocol any host $ipdest"
-                       set dest_source " permit $protocol host $ipdest any"
-                  }
-              } else {
-                set source_dest "permit ip any host $ipdest"
-                set dest_source "permit ip host $ipdest any"
-              }
-            } else {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                if { [regexp -nocase {\:} $ipsource ] } {
-                    set sourcesplit [ split $ipsource {:} ]
-                    set f 4
-                    set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
-                    if {[regexp -nocase {any} $ipsource]} {
-                        set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else {
-                        set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    }
-                } else {
-                    set source_dest " permit $protocol any host $ipsource"
-                    set dest_source " permit $protocol host $ipsource any"
-                    }
-              } else {
-                set source_dest "permit ip host $ipsource any"
-                set dest_source "permit ip $ipdest any host $ipsource"
-              }
-            }
-      }
-  }
-  if {[info exists any_s_d]} {
-      ios_config "access-list 199 $any_s_d"
-  } else {
-    puts "$source_dest | $dest_source"
-    ios_config "access-list 199 $source_dest"
-    ios_config "access-list 199 $dest_source"
-  }
-  exec "monitor capture buffer BUFF linear"
-  exec "monitor capture buffer BUFF filter access-list 199"
-  set buffsize [expr $size * 1000]
-  exec "monitor capture buffer BUFF size $buffsize"
-  # <256-102400 Kbytes>
-  exec "monitor capture buffer BUFF limit duration $duration"
-  # <1-2000 sec>
-  exec "monitor capture buffer BUFF max-size 1600"
-  if {$ctype == "control"} {
-  exec "monitor capture point ip process-switched POINT both"
-  } else { 
-    exec "monitor capture point ip cef POINT $sinterface both" 
+    exec "monitor capture point stop all"
+    ios_config "no access-list 199" 
+    ios_config "access-list 199"
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
+    } else {
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
     }
-  exec "monitor capture point associate POINT BUFF"
-  # <wait> show monitor capture buffer BUFF parameters
-  # <wait> or show monitor capture buffer BUFF dump
-  exec "monitor capture point start POINT"
-  set total $duration
-  for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
-  puts ""
-  set check [exec "show monitor capture point POINT"]
-  set stop 0
-  while {$stop < 2} {
-  if {[regexp {Inactive} $check]} {
-      set stop 3;
-      } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture point POINT"]; incr stop}
-  }
-  puts "Exporting capture to flash:CAPTURE.pcap"
-  exec "monitor capture point stop POINT"
-  exec "monitor capture buffer BUFF export flash:CAPTURE.pcap"
-  if {$ctype == "control"} {
-  exec "no monitor capture point ip process-switched POINT both"
-  } else {
-    exec "no monitor capture point ip cef POINT $sinterface both"
-  }
-  exec "no monitor capture buffer BUFF"
-  puts "\nDone!\n"
-  finish_statement
+    if {[info exists any_s_d]} {
+        ios_config "access-list 199 $any_s_d"
+    } else {
+      puts "$source_dest | $dest_source"
+      ios_config "access-list 199 $source_dest"
+      ios_config "access-list 199 $dest_source"
+    }
+    exec "monitor capture buffer BUFF linear"
+    exec "monitor capture buffer BUFF filter access-list 199"
+    set buffsize [expr $size * 1000]
+    exec "monitor capture buffer BUFF size $buffsize"
+    # <256-102400 Kbytes>
+    exec "monitor capture buffer BUFF limit duration $duration"
+    # <1-2000 sec>
+    exec "monitor capture buffer BUFF max-size 1600"
+    if {$ctype == "control"} {
+    exec "monitor capture point ip process-switched POINT both"
+    } else { 
+      exec "monitor capture point ip cef POINT $sinterface both" 
+      }
+    exec "monitor capture point associate POINT BUFF"
+    # <wait> show monitor capture buffer BUFF parameters
+    # <wait> or show monitor capture buffer BUFF dump
+    exec "monitor capture point start POINT"
+    set total $duration
+    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    puts ""
+    set check [exec "show monitor capture point POINT"]
+    set stop 0
+    while {$stop < 2} {
+    if {[regexp {Inactive} $check]} {
+        set stop 3;
+        } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture point POINT"]; incr stop}
+    }
+    puts "Exporting capture to flash:CAPTURE.pcap"
+    exec "monitor capture point stop POINT"
+    exec "monitor capture buffer BUFF export flash:CAPTURE.pcap"
+    if {$ctype == "control"} {
+    exec "no monitor capture point ip process-switched POINT both"
+    } else {
+      exec "no monitor capture point ip cef POINT $sinterface both"
+    }
+    exec "no monitor capture buffer BUFF"
+    puts "\nDone!\n"
+    finish_statement
 } 
       
+
+
+proc find_dest_next_hop_interface {destlookupnexthop} {
+    set lookup [exec "show ip cef $destlookupnexthop detail | i nexthop"]
+    set nexthopinterface [lindex [split $lookup ] end]
+    if {[regexp {[V|v]lan} $nexthopinterface]} {
+        set arpaddr [lindex [split $lookup ] end-1]
+        set mac [lindex [regexp -inline -all {\S+} [exec "sho ip arp | i $arpaddr"] ] 3]
+        set vlannum [regexp -inline -all {\d+} $nexthopinterface]
+        set macoutput [exec "show mac add vlan $vlannum | i $mac"]
+        set interface [lindex [regexp -inline -all {\S+} $macoutput ] end]
+        return $interface
+    } else {
+        return $nexthopinterface
+    }
+}
     
 proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration size} {
-    if { $ipsource == "any" && $ipdest == "any" } {
-        set any_s_d " permit $protocol any any"
-    } else {
-        if { $ipsource != "any" && $ipdest != "any" } {
-           if { $protocol == "tcp" || $protocol == "udp" } {
-                    if { [regexp -nocase {\:} $ipsource] && [regexp -nocase {\:} $ipdest] } {
-                          set sourcesplit [ split $ipsource {:} ]
-                          set destsplit [ split $ipdest {:} ]
-                          set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                          set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else { 
-                         if { [regexp -nocase {\:} $ipsource] || [regexp -nocase {\:} $ipdest] } {
-                                  if { [regexp -nocase {\:} $ipsource] } {
-                                         set sourcesplit [ split $ipsource {:} ]
-                                         set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
-                                         set dest_source "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                                 } else {
-                                         set destsplit [ split $ipdest {:} ]
-                                         set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
-                                         set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                                        }
-                                 }
-                            }
-             } else {
-                     set source_dest "permit ip host $ipsource host $ipdest"
-                     set dest_source "permit ip host $ipdest host $ipsource"
-                    }
-      } else {
-            if { $ipsource == "any" && $ipdest != "any" } {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                  if { [regexp -nocase {\:} $ipdest ] } {
-                       set destsplit [ split $ipdest {:} ]
-                       set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    if {[regexp -nocase {any} $ipdest]} {
-                       set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    } else {
-                       set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-                    }
-                  } else {
-                       set source_dest " permit $protocol any host $ipdest"
-                       set dest_source " permit $protocol host $ipdest any"
-                  }
-              } else {
-                set source_dest "permit ip any host $ipdest"
-                set dest_source "permit ip host $ipdest any"
-              }
-            } else {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                if { [regexp -nocase {\:} $ipsource ] } {
-                    set sourcesplit [ split $ipsource {:} ]
-                    set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
-                    if {[regexp -nocase {any} $ipsource]} {
-                        set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else {
-                        set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    }
-                } else {
-                    set source_dest " permit $protocol any host $ipsource"
-                    set dest_source " permit $protocol host $ipsource any"
-                    }
-              } else {
-                set source_dest "permit ip host $ipsource any"
-                set dest_source "permit ip $ipdest any host $ipsource"
-              }
-            }
-      }
-  }
-  if { [info exists any_s_d] } {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
-          set captureacl "$any_s_d"
-    } else {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
-          set captureacl "$source_dest \n $dest_source"
-    }
-
-  exec "no monitor capture CAPTURE"
-  if {[file exists bootflash:CAPTURE.pcap]} {
-      file delete -force -- bootflash:CAPTURE.pcap
-      }
-  ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
-  set buffersize [expr $size + 10]
-  if {$ctype == "control"} {
-      monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
-      monitor capture CAPTURE file location bootflash:CAPTURE.pcap buffer-size $buffersize size $size control-plane both 
-      monitor capture CAPTURE limit duration $duration packet-len 1600
-  } else { 
-        monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
-        monitor capture CAPTURE limit packet-len 1600
-        monitor capture CAPTURE interface $sinterface both file location bootflash:CAPTURE.pcap buffer-size $size limit duration $duration
+    if {$ctype != "control"} {
+        if {[regexp {any} $ipdest]} {
+          set destlookupnexthop "0.0.0.0/0"
+        } else {
+          if {[regexp {:} $ipdest]} {
+            set destlookupnexthop [lindex [split $ipdest {:}] 0]
+          } else {
+          set destlookupnexthop $ipdest
+          }
+        }
+        set interfaceresult [find_dest_next_hop_interface $destlookupnexthop]
+        if {$interfaceresult != ""}{ 
+            set additionalinterface $interfaceresult
+            puts "Found Reverse Interface: $additionalinterface \n"
+        }
     }
   
-  monitor capture CAPTURE start
-  set total $duration
-  for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
-  puts ""
-  set check [exec "show monitor capture CAPTURE"]
-  set stop 0
-  while {$stop < 2} {
-  if {[regexp {Inactive} $check]} {
-      set stop 3;
-      } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
-  }
-  exec "monitor capture CAPTURE stop"
-  after 1000
-  exec "no monitor capture CAPTURE"
-  exec "no monitor capture CAPTURE"
-  ios_config "no ip access-list extended CAPTURE-FILTER"
-  puts "\nDone!\n"
-  finish_statement
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
+    } else {
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
+    }
+    if { [info exists any_s_d] } {
+            ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            set captureacl "$any_s_d"
+      } else {
+            ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            set captureacl "$source_dest \n $dest_source"
+      }
+  
+    no monitor capture CAPTURE
+    if {[file exists bootflash:CAPTURE.pcap]} {
+        file delete -force -- bootflash:CAPTURE.pcap
+        }
+    ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
+    set buffersize [expr $size + 10]
+    if {$ctype == "control"} {
+        monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
+        monitor capture CAPTURE file location bootflash:CAPTURE.pcap buffer-size $buffersize size $size control-plane both 
+        monitor capture CAPTURE limit duration $duration packet-len 1600
+    } else { 
+          monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
+          monitor capture CAPTURE limit packet-len 1600
+          monitor capture CAPTURE interface $sinterface both file location bootflash:CAPTURE.pcap buffer-size $size limit duration $duration
+      if {[info exists $additionalinterface]} {
+          monitor capture CAPTURE interface $additionalinterface in
+      }
+    }
+
+    monitor capture CAPTURE start
+    set total $duration
+    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    puts ""
+    set check [exec "show monitor capture CAPTURE"]
+    set stop 0
+    while {$stop < 2} {
+    if {[regexp {Inactive} $check]} {
+        set stop 3;
+        } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
+    }
+    exec "monitor capture CAPTURE stop"
+    after 1000
+    exec "no monitor capture CAPTURE"
+    exec "no monitor capture CAPTURE"
+    ios_config "no ip access-list extended CAPTURE-FILTER"
+    puts "\nDone!\n"
+    finish_statement
 }
 
 
 proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration size} {
-    if { $ipsource == "any" && $ipdest == "any" } {
-        set any_s_d " permit $protocol any any"
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
     } else {
-        if { $ipsource != "any" && $ipdest != "any" } {
-           if { $protocol == "tcp" || $protocol == "udp" } {
-                    if { [regexp -nocase {\:} $ipsource] && [regexp -nocase {\:} $ipdest] } {
-                          set sourcesplit [ split $ipsource {:} ]
-                          set destsplit [ split $ipdest {:} ]
-                          set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                          set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else { 
-                         if { [regexp -nocase {\:} $ipsource] || [regexp -nocase {\:} $ipdest] } {
-                                  if { [regexp -nocase {\:} $ipsource] } {
-                                         set sourcesplit [ split $ipsource {:} ]
-                                         set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
-                                         set dest_source "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                                 } else {
-                                         set destsplit [ split $ipdest {:} ]
-                                         set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
-                                         set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                                        }
-                                 }
-                            }
-             } else {
-                     set source_dest "permit ip host $ipsource host $ipdest"
-                     set dest_source "permit ip host $ipdest host $ipsource"
-                    }
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
+    }
+    if { [info exists any_s_d] } {
+            ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            set captureacl "$any_s_d"
       } else {
-            if { $ipsource == "any" && $ipdest != "any" } {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                  if { [regexp -nocase {\:} $ipdest ] } {
-                       set destsplit [ split $ipdest {:} ]
-                       set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    if {[regexp -nocase {any} $ipdest]} {
-                       set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    } else {
-                       set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-                    }
-                  } else {
-                       set source_dest " permit $protocol any host $ipdest"
-                       set dest_source " permit $protocol host $ipdest any"
-                  }
-              } else {
-                set source_dest "permit ip any host $ipdest"
-                set dest_source "permit ip host $ipdest any"
-              }
-            } else {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                if { [regexp -nocase {\:} $ipsource ] } {
-                    set sourcesplit [ split $ipsource {:} ]
-                    set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
-                    if {[regexp -nocase {any} $ipsource]} {
-                        set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else {
-                        set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    }
-                } else {
-                    set source_dest " permit $protocol any host $ipsource"
-                    set dest_source " permit $protocol host $ipsource any"
-                    }
-              } else {
-                set source_dest "permit ip host $ipsource any"
-                set dest_source "permit ip $ipdest any host $ipsource"
-              }
-            }
+            ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            set captureacl "$source_dest \n $dest_source"
       }
-  }
-  if { [info exists any_s_d] } {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
-          set captureacl "$any_s_d"
-    } else {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
-          set captureacl "$source_dest \n $dest_source"
-    }
-
-  exec "no monitor capture CAPTURE"
-  if {[file exists flash:CAPTURE.pcap]} {
-      file delete -force -- flash:CAPTURE.pcap
+  
+    exec "no monitor capture CAPTURE"
+    if {[file exists flash:CAPTURE.pcap]} {
+        file delete -force -- flash:CAPTURE.pcap
+        }
+    set buffsize [expr $size * 1000]
+    monitor capture CAPTURE access-list CAPTURE-FILTER
+    monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size size $size
+    monitor capture CAPTURE limit duration $duration packet-len 1600
+    if {$ctype == "control"} {
+      monitor capture CAPTURE control-plane both
+    } else { 
+      monitor capture CAPTURE interface $sinterface both
       }
-  set buffsize [expr $size * 1000]
-  monitor capture CAPTURE access-list CAPTURE-FILTER
-  monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size size $size
-  monitor capture CAPTURE limit duration $duration packet-len 1600
-  if {$ctype == "control"} {
-    monitor capture CAPTURE control-plane both
-  } else { 
-    monitor capture CAPTURE interface $sinterface both
+    monitor capture CAPTURE start
+    set total $duration
+    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    puts ""
+    set check [exec "show monitor capture CAPTURE"]
+    set stop 0
+    while {$stop < 2} {
+    if {[regexp {Inactive} $check]} {
+        set stop 3;
+        } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-  monitor capture CAPTURE start
-  set total $duration
-  for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
-  puts ""
-  set check [exec "show monitor capture CAPTURE"]
-  set stop 0
-  while {$stop < 2} {
-  if {[regexp {Inactive} $check]} {
-      set stop 3;
-      } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
-  }
-  puts "Exporting capture to flash:CAPTURE.pcap"
-  exec "monitor capture CAPTURE stop"
-  exec "no monitor capture CAPTURE"
-  ios_config "no ip access-list extended CAPTURE-FILTER"
-  puts "\nDone!\n"
-  puts "'show monitor capture file flash:CAPTURE.pcap' to see local wireshark summary"
-  finish_statement
+    puts "Exporting capture to flash:CAPTURE.pcap"
+    exec "monitor capture CAPTURE stop"
+    exec "no monitor capture CAPTURE"
+    ios_config "no ip access-list extended CAPTURE-FILTER"
+    puts "\nDone!\n"
+    puts "'show monitor capture file flash:CAPTURE.pcap' to see local wireshark summary"
+    finish_statement
 }
 
 proc capture_commands3800 { protocol ipsource ipdest ctype sinterface duration size} {
-    if { $ipsource == "any" && $ipdest == "any" } {
-        set any_s_d " permit $protocol any any"
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
     } else {
-        if { $ipsource != "any" && $ipdest != "any" } {
-           if { $protocol == "tcp" || $protocol == "udp" } {
-                    if { [regexp -nocase {\:} $ipsource] && [regexp -nocase {\:} $ipdest] } {
-                          set sourcesplit [ split $ipsource {:} ]
-                          set destsplit [ split $ipdest {:} ]
-                          set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                          set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else { 
-                         if { [regexp -nocase {\:} $ipsource] || [regexp -nocase {\:} $ipdest] } {
-                                  if { [regexp -nocase {\:} $ipsource] } {
-                                         set sourcesplit [ split $ipsource {:} ]
-                                         set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
-                                         set dest_source "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                                 } else {
-                                         set destsplit [ split $ipdest {:} ]
-                                         set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
-                                         set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                                        }
-                                 }
-                            }
-             } else {
-                     set source_dest "permit ip host $ipsource host $ipdest"
-                     set dest_source "permit ip host $ipdest host $ipsource"
-                    }
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
+    }
+    if { [info exists any_s_d] } {
+            ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            set captureacl "$any_s_d"
       } else {
-            if { $ipsource == "any" && $ipdest != "any" } {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                  if { [regexp -nocase {\:} $ipdest ] } {
-                       set destsplit [ split $ipdest {:} ]
-                       set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    if {[regexp -nocase {any} $ipdest]} {
-                       set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    } else {
-                       set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-                    }
-                  } else {
-                       set source_dest " permit $protocol any host $ipdest"
-                       set dest_source " permit $protocol host $ipdest any"
-                  }
-              } else {
-                set source_dest "permit ip any host $ipdest"
-                set dest_source "permit ip host $ipdest any"
-              }
-            } else {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                if { [regexp -nocase {\:} $ipsource ] } {
-                    set sourcesplit [ split $ipsource {:} ]
-                    set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
-                    if {[regexp -nocase {any} $ipsource]} {
-                        set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else {
-                        set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    }
-                } else {
-                    set source_dest " permit $protocol any host $ipsource"
-                    set dest_source " permit $protocol host $ipsource any"
-                    }
-              } else {
-                set source_dest "permit ip host $ipsource any"
-                set dest_source "permit ip $ipdest any host $ipsource"
-              }
-            }
+            ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            set captureacl "$source_dest \n $dest_source"
       }
-  }
-  if { [info exists any_s_d] } {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
-          set captureacl "$any_s_d"
-    } else {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
-          set captureacl "$source_dest \n $dest_source"
-    }
-
-  exec "no monitor capture CAPTURE"
-  if {[file exists flash:CAPTURE.pcap]} {
-      file delete -force -- flash:CAPTURE.pcap
-      }
-  ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
-  if {$ctype == "control"} {
-    monitor capture CAPTURE class-map CAPTURE_CLASS_MAP 
-    monitor capture CAPTURE limit packet-len 1600
-    monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration
-    monitor capture CAPTURE control-plane both 
-
-  } else { 
-        monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
-        monitor capture CAPTURE limit packet-len 1600
-        monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration
-		monitor capture CAPTURE interface $sinterface both 
-    }
   
-  monitor capture CAPTURE start
-  set total $duration
-  for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
-  puts ""
-  set check [exec "show monitor capture CAPTURE"]
-  set stop 0
-  while {$stop < 2} {
-  if {[regexp {Inactive} $check]} {
-      set stop 3;
-      } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
-  }
-  exec "monitor capture CAPTURE stop"
-  #puts "Exporting capture to flash:CAPTURE.pcap"
-  #exec "monitor capture CAPTURE export location flash:CAPTURE.pcap"
-  exec "no monitor capture CAPTURE"
-  ios_config "no ip access-list extended CAPTURE-FILTER"
-  puts "\nDone!\n"
-  finish_statement
+    exec "no monitor capture CAPTURE"
+    if {[file exists flash:CAPTURE.pcap]} {
+        file delete -force -- flash:CAPTURE.pcap
+        }
+    ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
+    if {$ctype == "control"} {
+      monitor capture CAPTURE class-map CAPTURE_CLASS_MAP 
+      monitor capture CAPTURE limit packet-len 1600
+      monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration
+      monitor capture CAPTURE control-plane both 
+  
+    } else { 
+          monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
+          monitor capture CAPTURE limit packet-len 1600
+          monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration
+          monitor capture CAPTURE interface $sinterface both 
+      }
+    
+    monitor capture CAPTURE start
+    set total $duration
+    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    puts ""
+    set check [exec "show monitor capture CAPTURE"]
+    set stop 0
+    while {$stop < 2} {
+    if {[regexp {Inactive} $check]} {
+        set stop 3;
+        } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
+    }
+    exec "monitor capture CAPTURE stop"
+    #puts "Exporting capture to flash:CAPTURE.pcap"
+    #exec "monitor capture CAPTURE export location flash:CAPTURE.pcap"
+    exec "no monitor capture CAPTURE"
+    ios_config "no ip access-list extended CAPTURE-FILTER"
+    puts "\nDone!\n"
+    finish_statement
 }
 
 proc capture_commands4400 { protocol ipsource ipdest ctype sinterface duration size} {
-    if { $ipsource == "any" && $ipdest == "any" } {
-        set any_s_d " permit $protocol any any"
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
     } else {
-        if { $ipsource != "any" && $ipdest != "any" } {
-           if { $protocol == "tcp" || $protocol == "udp" } {
-                    if { [regexp -nocase {\:} $ipsource] && [regexp -nocase {\:} $ipdest] } {
-                          set sourcesplit [ split $ipsource {:} ]
-                          set destsplit [ split $ipdest {:} ]
-                          set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                          set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                          
-                    } else { 
-                         if { [regexp -nocase {\:} $ipsource] || [regexp -nocase {\:} $ipdest] } {
-                                  if { [regexp -nocase {\:} $ipsource] } {
-                                         set sourcesplit [ split $ipsource {:} ]
-                                         set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
-                                         set dest_source "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                                 } else {
-                                         set destsplit [ split $ipdest {:} ]
-                                         set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
-                                         set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                                        }
-                                 }
-                            }
-             } else {
-                     set source_dest "permit ip host $ipsource host $ipdest"
-                     set dest_source "permit ip host $ipdest host $ipsource"
-                    }
-      } else {
-            if { $ipsource == "any" && $ipdest != "any" } {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                  if { [regexp -nocase {\:} $ipdest ] } {
-                       set destsplit [ split $ipdest {:} ]
-                       set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    if {[regexp -nocase {any} $ipdest]} {
-                       set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    } else {
-                       set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-                    }
-                  } else {
-                       set source_dest " permit $protocol any host $ipdest"
-                       set dest_source " permit $protocol host $ipdest any"
-                  }
-              } else {
-                set source_dest "permit ip any host $ipdest"
-                set dest_source "permit ip host $ipdest any"
-              }
-            } else {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                if { [regexp -nocase {\:} $ipsource ] } {
-                    set sourcesplit [ split $ipsource {:} ]
-                    set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
-                    if {[regexp -nocase {any} $ipsource]} {
-                        set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else {
-                        set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    }
-                } else {
-                    set source_dest " permit $protocol any host $ipsource"
-                    set dest_source " permit $protocol host $ipsource any"
-                    }
-              } else {
-                set source_dest "permit ip host $ipsource any"
-                set dest_source "permit ip $ipdest any host $ipsource"
-              }
-            }
-      }
-  }
-
-if { [info exists any_s_d] } {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
-          set captureacl "$any_s_d"
-    } else {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
-          set captureacl "$source_dest \n $dest_source"
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
     }
-
-  exec "no monitor capture CAPTURE"
-  if {[file exists flash:CAPTURE.pcap]} {
-      file delete -force -- flash:CAPTURE.pcap
+    if { [info exists any_s_d] } {
+              ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+              set captureacl "$any_s_d"
+        } else {
+              ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+              set captureacl "$source_dest \n $dest_source"
+        }
+    
+    exec "no monitor capture CAPTURE"
+    if {[file exists flash:CAPTURE.pcap]} {
+        file delete -force -- flash:CAPTURE.pcap
+        }
+  
+    if {$ctype == "control"} {
+      monitor capture CAPTURE limit packet-len 1600 duration $duration 
+      monitor capture CAPTURE access-list CAPTURE-FILTER buffer size $size control-plane both
+  
+    } else { 
+      monitor capture CAPTURE limit packet-len 1600 duration $duration 
+      monitor capture CAPTURE access-list CAPTURE-FILTER buffer size $size interface $sinterface both
       }
-
-  if {$ctype == "control"} {
-    monitor capture CAPTURE limit packet-len 1600 duration $duration access-list CAPTURE-FILTER buffer size $size control-plane both
-
-  } else { 
-    monitor capture CAPTURE limit packet-len 1600 limit duration $duration access-list CAPTURE-FILTER buffer size $size interface $sinterface both
+    monitor capture CAPTURE start
+    set total $duration
+    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    puts ""
+    set check [exec "show monitor capture CAPTURE"]
+    set stop 0
+    while {$stop < 2} {
+    if {[regexp {Inactive} $check]} {
+        set stop 3;
+        } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-  monitor capture CAPTURE start
-  set total $duration
-  for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
-  puts ""
-  set check [exec "show monitor capture CAPTURE"]
-  set stop 0
-  while {$stop < 2} {
-  if {[regexp {Inactive} $check]} {
-      set stop 3;
-      } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
-  }
-  puts "Exporting capture to bootflash:CAPTURE.pcap"
-  exec "monitor capture CAPTURE stop"
-  exec "monitor capture CAPTURE export bootflash:CAPTURE.pcap"
-  exec "no monitor capture CAPTURE"
-  ios_config "no ip access-list extended CAPTURE-FILTER"
-  puts "\nDone!\n"
-  finish_statement
+    puts "Exporting capture to bootflash:CAPTURE.pcap"
+    exec "monitor capture CAPTURE stop"
+    exec "monitor capture CAPTURE export bootflash:CAPTURE.pcap"
+    exec "no monitor capture CAPTURE"
+    ios_config "no ip access-list extended CAPTURE-FILTER"
+    puts "\nDone!\n"
+    finish_statement
 }
 
 proc capture_commands1000 { protocol ipsource ipdest ctype sinterface duration size} {
-    if { $ipsource == "any" && $ipdest == "any" } {
-        set any_s_d " permit $protocol any any"
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
     } else {
-        if { $ipsource != "any" && $ipdest != "any" } {
-           if { $protocol == "tcp" || $protocol == "udp" } {
-                    if { [regexp -nocase {\:} $ipsource] && [regexp -nocase {\:} $ipdest] } {
-                          set sourcesplit [ split $ipsource {:} ]
-                          set destsplit [ split $ipdest {:} ]
-                          set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                          set dest_source "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                          
-                    } else { 
-                         if { [regexp -nocase {\:} $ipsource] || [regexp -nocase {\:} $ipdest] } {
-                                  if { [regexp -nocase {\:} $ipsource] } {
-                                         set sourcesplit [ split $ipsource {:} ]
-                                         set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] host $ipdest"
-                                         set dest_source "permit $protocol host $ipdest host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                                 } else {
-                                         set destsplit [ split $ipdest {:} ]
-                                         set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] host $ipsource"
-                                         set dest_source "permit $protocol host $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                                        }
-                                 }
-                            }
-             } else {
-                     set source_dest "permit ip host $ipsource host $ipdest"
-                     set dest_source "permit ip host $ipdest host $ipsource"
-                    }
-      } else {
-            if { $ipsource == "any" && $ipdest != "any" } {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                  if { [regexp -nocase {\:} $ipdest ] } {
-                       set destsplit [ split $ipdest {:} ]
-                       set dest_source "permit $protocol $ipsource host [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    if {[regexp -nocase {any} $ipdest]} {
-                       set source_dest "permit $protocol $ipsource [lindex $destsplit 0] eq [lindex $destsplit 1]"
-                    } else {
-                       set source_dest "permit $protocol host [lindex $destsplit 0] eq [lindex $destsplit 1] $ipsource"
-                    }
-                  } else {
-                       set source_dest " permit $protocol any host $ipdest"
-                       set dest_source " permit $protocol host $ipdest any"
-                  }
-              } else {
-                set source_dest "permit ip any host $ipdest"
-                set dest_source "permit ip host $ipdest any"
-              }
-            } else {
-              if { $protocol == "tcp" || $protocol == "udp" } {
-                if { [regexp -nocase {\:} $ipsource ] } {
-                    set sourcesplit [ split $ipsource {:} ]
-                    set source_dest "permit $protocol host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1] any"
-                    if {[regexp -nocase {any} $ipsource]} {
-                        set dest_source "permit $protocol any [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    } else {
-                        set dest_source "permit $protocol any host [lindex $sourcesplit 0] eq [lindex $sourcesplit 1]"
-                    }
-                } else {
-                    set source_dest " permit $protocol any host $ipsource"
-                    set dest_source " permit $protocol host $ipsource any"
-                    }
-              } else {
-                set source_dest "permit ip host $ipsource any"
-                set dest_source "permit ip $ipdest any host $ipsource"
-              }
-            }
-      }
-  }
-
-if { [info exists any_s_d] } {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
-          set captureacl "$any_s_d"
-    } else {
-          ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
-          set captureacl "$source_dest \n $dest_source"
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
     }
-
-  exec "no monitor capture CAPTURE"
-  if {[file exists flash:CAPTURE.pcap]} {
-      file delete -force -- flash:CAPTURE.pcap
+    if { [info exists any_s_d] } {
+              ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+              set captureacl "$any_s_d"
+        } else {
+              ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+              set captureacl "$source_dest \n $dest_source"
+        }
+  
+    exec "no monitor capture CAPTURE"
+    if {[file exists flash:CAPTURE.pcap]} {
+        file delete -force -- flash:CAPTURE.pcap
+        }
+    monitor capture CAPTURE limit packet-len 1600
+    monitor capture CAPTURE access-list CAPTURE-FILTER
+    monitor capture CAPTURE buffer size $size
+    monitor capture CAPTURE limit duration $duration
+  
+    if {$ctype == "control"} {
+      monitor capture CAPTURE control-plane both
+    } else { 
+      monitor capture CAPTURE interface $sinterface both
       }
-  monitor capture CAPTURE limit packet-len 1600
-  monitor capture CAPTURE access-list CAPTURE-FILTER
-  monitor capture CAPTURE buffer size $size
-  monitor capture CAPTURE limit duration $duration
-
-  if {$ctype == "control"} {
-    monitor capture CAPTURE control-plane both
-  } else { 
-    monitor capture CAPTURE interface $sinterface both
+    monitor capture CAPTURE start
+    set total $duration
+    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    puts ""
+    set check [exec "show monitor capture CAPTURE"]
+    set stop 0
+    while {$stop < 2} {
+    if {[regexp {Inactive} $check]} {
+        set stop 3;
+        } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-  monitor capture CAPTURE start
-  set total $duration
-  for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
-  puts ""
-  set check [exec "show monitor capture CAPTURE"]
-  set stop 0
-  while {$stop < 2} {
-  if {[regexp {Inactive} $check]} {
-      set stop 3;
-      } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
-  }
-  puts "Exporting capture to flash:CAPTURE.pcap"
-  exec "monitor capture CAPTURE stop"
-  exec "monitor capture CAPTURE export flash:CAPTURE.pcap"
-  exec "no monitor capture CAPTURE"
-  ios_config "no ip access-list extended CAPTURE-FILTER"
-  puts "\nDone!\n"
-  finish_statement
+    puts "Exporting capture to flash:CAPTURE.pcap"
+    exec "monitor capture CAPTURE stop"
+    exec "monitor capture CAPTURE export flash:CAPTURE.pcap"
+    exec "no monitor capture CAPTURE"
+    ios_config "no ip access-list extended CAPTURE-FILTER"
+    puts "\nDone!\n"
+    finish_statement
 }
 
 proc finish_statement {} {
-  set allusers [exec "who"]
-  set current_user [foreach {line} [split $allusers "\n"] {if {[regexp {\*} $line]} {set foundx $line; set user [regexp -all -inline {\S+} $foundx]}}; lindex $user 4]
-  set allusers [exec "show aaa user all | i $current_user"]
-  set current_user [string trim [lindex [split $allusers "="] 1]]
-  set showip [exec "show tcp br"]
-  set current_ip [foreach {line} [split $showip "\n"] {if {[regexp {\.22\s} $line]} {set foundx $line; set ip [regexp -all -inline {\S+} $foundx]}}; lindex $ip 1]
-  puts [string repeat * 20]
-  puts "Get copy of pcap from flash via \"scp\" or SecureFx"
-  set cmdhelper "Windows CMD \'scp $current_user"
-  append cmdhelper "@"
-  append cmdhelper [string range $current_ip 0 end-3]
-  append cmdhelper ":CAPTURE.pcap . & .\\CAPTURE.pcap'"
-  puts $cmdhelper
-  set cmdhelper "Windows Powershell \'scp $current_user"
-  append cmdhelper "@"
-  append cmdhelper [string range $current_ip 0 end-3]
-  append cmdhelper ":CAPTURE.pcap . ; .\\CAPTURE.pcap'"
-  puts $cmdhelper
+    set allusers [exec "who"]
+    set current_user [foreach {line} [split $allusers "\n"] {
+        if {[regexp {\*} $line]} {
+            set foundx $line; set user [regexp -all -inline {\S+} $foundx]}
+            }; lindex $user 4]
+    set allusers [exec "show aaa user all | i $current_user"]
+    set current_user [string trim [lindex [split $allusers "="] 1]]
+    set showip [exec "show tcp br"]
+    set current_ip [foreach {line} [split $showip "\n"] {
+        if {[regexp {\.22\s} $line]} {
+            set foundx $line; set ip [regexp -all -inline {\S+} $foundx]}
+            }; lindex $ip 1]
+    puts [string repeat * 20]
+    puts "Get copy of pcap from flash via \"scp\" or SecureFx"
+    set cmdhelper "Windows CMD \'scp $current_user"
+    append cmdhelper "@"
+    append cmdhelper [string range $current_ip 0 end-3]
+    append cmdhelper ":CAPTURE.pcap . & .\\CAPTURE.pcap'"
+    puts $cmdhelper
+    set cmdhelper "Windows Powershell \'scp $current_user"
+    append cmdhelper "@"
+    append cmdhelper [string range $current_ip 0 end-3]
+    append cmdhelper ":CAPTURE.pcap . ; .\\CAPTURE.pcap'"
+    puts $cmdhelper
 
 }
 
 
 proc display_cli_packet_search { version } {
-       switch -glob $version {
-          9* {flash_devices}
-	      45* {bootflash_devices}
-          38* {flash_devices}
-          3* {flash_devices}
-		  1004 {puts "CLI File Display Unsupported. Must SCP to local Computer!"}
-          100* {flash_devices}
-          default {puts "CLI File Display Unsupported. Must SCP to local Computer!"}
-       }
+    switch -glob $version {
+        9*   {flash_devices}
+        45*  {bootflash_devices}
+        38*  {flash_devices}
+        3*   {flash_devices}
+        1004 {puts "CLI File Display Unsupported. Must SCP to local Computer!"}
+        100* {flash_devices}
+        default {puts "CLI File Display Unsupported. Must SCP to local Computer!"}
+    }
 }
 
 proc flash_devices {} {
@@ -961,48 +767,62 @@ if {$::argc == 0} {puts "\[HELP\]:\nProvide source and destination {ip|any} with
 
      ***If you want display pcap on cli examples type:
      wireshark filter
-	 
-	 "
-	 
+   
+   "
+   
 } else {
     set get_version [exec "show ver"]
     foreach {line} [split $get_version "\n"]  {
         if {[regexp -nocase "model number" $line]} {
             set found_version [lindex [regexp -all -inline {\S+} $line] 3]
-            }
-           }
+        }
+    }
     if {![info exists found_version]} {
        foreach {line} [split $get_version "\n"]  {
-            if {[regexp {(CSR1000V)|(C45\d\d)|(ASR100\d)} $line]} {
-            #|| [regexp {C45\d\d} $line] || [regexp {ISR44} $line] 
+            if {[regexp {(CSR1000V)|(C45\d\d)|(ASR100\d)|(ISR44\d\d)} $line]} {
                set found_version [lindex [regexp -all -inline {\S+} $line] 1]
             } 
         }
-	  }
+    }
     if {![info exists found_version]} {
           puts "Unable to determine platform. "
-		  return
-          #puts -nonewline "Please enter platform number \[example: for csr1000v enter 1000\]:"
-          #flush stdout
-          #gets stdin {askversion}
-          #set found_version $askversion 
+      return
     }
     
     if {[regexp {\d\d\d\d*} $found_version]} {
         set device_string "Device version: "
         set version [lindex [regexp -inline {\d\d\d\d} $found_version] 0]
         append device_string $version
-        puts $device_string
-		if {$::argc == 1 && [lindex $argv 0] == "filter"} {display_cli_packet_search $version ; return }
-		if {[expr $::argc > 1] && [expr $::argc < 3]} {puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"
-		} else {
-        if {$::argc == 3} {main $version [lindex $argv 0] [lindex $argv 1] [lindex $argv 2]} else {main $version [lindex $argv 0] [lindex $argv 1] [lindex $argv 2] [lindex $argv 3] [lindex $argv 4] [lindex $argv 5]}
-		}
+    } else {
+        puts "Unable to determine platform. "
+        return
+    }
+       
+    if {$::argc == 1 && [lindex $argv 0] == "filter"} {
+        display_cli_packet_search $version ; return 
+        }
+    if {[expr $::argc > 1] && [expr $::argc < 3]} {
+        puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
+    } else {
+        set debugfound [lsearch $argv "debug"]
+        if {$debugfound != -1} {
+            global debug; set debug 1; puts "debugging"
+            set newarglist [list]
+            foreach {argfound} $argv {
+                if {$argfound == "debug"} {} else {
+                    lappend newarglist $argfound
+                }
+            }
+        
+        if {$::argc == 3} {
+          clear_screen
+          puts $device_string
+          main $version [lindex $newarglist 0] [lindex $newarglist 1] [lindex $newarglist 2]
+        } else {
+            main $version [lindex $newarglist 0] [lindex $newarglist 1] [lindex $newarglist 2] [lindex $newarglist 3] [lindex $newarglist 4] [lindex $newarglist 5]
+        }
+        }
     }
 }
 
 tclquit
-
-
-
-
