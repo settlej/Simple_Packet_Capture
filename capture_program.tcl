@@ -48,12 +48,26 @@ proc clear_screen {} {
 }
 
 proc debugputs {msg} {
-    if {$debug == 1} {
-       puts $msg
+    if {$::debug == 1} {
+       puts "\[DEBUG\]\: $msg"
     }
 }
 
-proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration {}} {size {}} } {
+proc noexec_perform {event} {
+    debugputs $event
+    $event
+}
+
+proc perform {event {iosconfig { }} } {
+    debugputs $event
+    if {$iosconfig != { }} {
+        ios_config $event
+    } else {
+        exec $event
+    }
+}
+
+proc gatherinformation_and_begin_capture {version protocol ipsource {ipdest any} {sinterface nothing} {duration {}} {size {}} } {
     if {$sinterface == "nothing"} {
         puts "\nCapture Type:\n  1.\) Interface \[default\]\n  2.\) Control-Plane"
         puts -nonewline "\nSelection: "
@@ -66,9 +80,9 @@ proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration
         # get list of interfaces
         if {$ctype == "Interface"} { 
              puts "\nAvailable Interfaces:"
-             set foundinterfaces [regexp -all -inline {[A-Za-z]+\d\/+[\d\/]+\s} [exec "show ip int br"]] 
+             set foundinterfaces [regexp -all -inline {[A-Za-z-]+\d\/?\d?\/?\d?\/?\d?\d?} [exec "show ip int br"]] 
              #set foundinterfaces [regexp -all -inline {([A-Za-z]+\d\/)+[\d\/]+} [exec "show ip int br"]]
-             foreach {a b c d e f g} [join $foundinterfaces ","] {puts "$a $b $c $d $e $f $g"} 
+             foreach {a b c d e f g} [join $foundinterfaces ", "] {puts "$a $b $c $d $e $f $g"} 
              set i 0
              puts " "
              while {$i < 1} {
@@ -78,7 +92,7 @@ proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration
                 gets stdin {sinterface}
                 if {$sinterface == "exit"} {incr i} else {}
                 if {$i > 0} {continue} else {}
-                if {[lsearch -exact $foundinterfaces "$sinterface "] == -1} { puts "\nInterface Not found...\n"} else {incr i}
+                if {[lsearch -exact $foundinterfaces "$sinterface"] == -1} { puts "\nInterface Not found...\n"} else {incr i}
                 }
         }
     } else {
@@ -89,17 +103,17 @@ proc main {version protocol ipsource {ipdest any} {sinterface nothing} {duration
  
     if { $duration == {} || $size == {} } {
       if {$duration == {}} {
-           puts -nonewline "\nHow long to run capture? <1-300 seconds> \[Default=30\] : "
+           puts -nonewline "\nHow long to run capture? <1-300 seconds> \[Default=20\] : "
            flush stdout
            gets stdin {duration}
               if {[string trim $duration] > 0} {
-                } else {set duration 30;}
+                } else {set duration 20;}
       }
       if {$size == {}} {
-          puts -nonewline "\nMax Capture size? <1-50 MB> \[Default=30\] : "
+          puts -nonewline "\nMax Capture size? <1-50 MB> \[Default=10\] : "
           flush stdout
           gets stdin {size}
-          if {[string trim $size] > 0} {} else {set size 30}
+          if {[string trim $size] > 0} {} else {set size 10}
           }
       startcapture $version $protocol $ipsource $ipdest $ctype $sinterface $duration $size
     } else {
@@ -133,14 +147,14 @@ proc startcapture {version protocol ipsource ipdest ctype sinterface duration si
         puts "Capture ACL: $protocol any any"
       } else {
           puts "Capture ACL: $protocol $ipsource $ipdest 
-          $protocol $ipdest $ipsource"
+             $protocol $ipdest $ipsource"
       }
       puts "Capture location: flash:CAPTURE.pcap"
       puts [string repeat - 37]
       puts ""
       if {$protocol == "ip" && $ipsource == "any" && $ipdest == "any"} {
           puts "****WARNING!**** Using \"ip any any\" may create stress on CPU, if possible try to limit to tcp/udp/eigrp/ospf/icmp.
-          Also make sure time duration is at a reasonable time if monitoring high load interface."
+                 Also make sure time duration is at a reasonable time if monitoring high load interface."
       }
       if {[expr $duration > 300]} {
           puts "***TERMINIATING! Duration is greater than 300 sec ***"; return
@@ -287,9 +301,8 @@ proc acl_generator {protocol ipsource ipdest} {
 }
 
 proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration size} {
-    exec "monitor capture point stop all"
-    ios_config "no access-list 199" 
-    ios_config "access-list 199"
+    perform "monitor capture point stop all"
+    perform "no access-list 199" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
       set any_s_d [lindex $aclresults 0]
@@ -298,48 +311,51 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
       set dest_source [lindex $aclresults 1]
     }
     if {[info exists any_s_d]} {
-        ios_config "access-list 199 $any_s_d"
+      perform "access-list 199 $any_s_d" iosconfig
     } else {
-      puts "$source_dest | $dest_source"
-      ios_config "access-list 199 $source_dest"
-      ios_config "access-list 199 $dest_source"
+      perform "access-list 199 $source_dest" iosconfig
+      perform "access-list 199 $dest_source" iosconfig
     }
-    exec "monitor capture buffer BUFF linear"
-    exec "monitor capture buffer BUFF filter access-list 199"
+    perform "monitor capture buffer BUFF linear"
+    perform "monitor capture buffer BUFF filter access-list 199"
     set buffsize [expr $size * 1000]
-    exec "monitor capture buffer BUFF size $buffsize"
+    debugputs "\(INFO\) Buffer-size $buffsize KB"
+    perform "monitor capture buffer BUFF size $buffsize"
     # <256-102400 Kbytes>
-    exec "monitor capture buffer BUFF limit duration $duration"
+    perform "monitor capture buffer BUFF limit duration $duration"
     # <1-2000 sec>
-    exec "monitor capture buffer BUFF max-size 1600"
+    debugputs "\(INFO\) Max MTU capture set to 172"
+    perform "monitor capture buffer BUFF max-size 172"
     if {$ctype == "control"} {
-    exec "monitor capture point ip process-switched POINT both"
+       perform "monitor capture point ip process-switched POINT both"
     } else { 
-      exec "monitor capture point ip cef POINT $sinterface both" 
+      perform "monitor capture point ip cef POINT $sinterface both" 
       }
-    exec "monitor capture point associate POINT BUFF"
+    perform "monitor capture point associate POINT BUFF"
     # <wait> show monitor capture buffer BUFF parameters
     # <wait> or show monitor capture buffer BUFF dump
-    exec "monitor capture point start POINT"
+    perform "monitor capture point start POINT"
     set total $duration
     for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
     puts ""
-    set check [exec "show monitor capture point POINT"]
+    debugputs "\(INFO\) Checking capture status"
+    set check [perform "show monitor capture point POINT"]
     set stop 0
     while {$stop < 2} {
     if {[regexp {Inactive} $check]} {
         set stop 3;
         } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture point POINT"]; incr stop}
     }
-    puts "Exporting capture to flash:CAPTURE.pcap"
-    exec "monitor capture point stop POINT"
-    exec "monitor capture buffer BUFF export flash:CAPTURE.pcap"
+    perform "monitor capture point stop POINT"
+    debugputs "\(INFO\) Exporting capture to flash:CAPTURE.pcap"
+    perform "monitor capture buffer BUFF export flash:CAPTURE.pcap"
     if {$ctype == "control"} {
-    exec "no monitor capture point ip process-switched POINT both"
+       perform "no monitor capture point ip process-switched POINT both"
     } else {
-      exec "no monitor capture point ip cef POINT $sinterface both"
+       perform "no monitor capture point ip cef POINT $sinterface both"
     }
-    exec "no monitor capture buffer BUFF"
+    perform "no monitor capture buffer BUFF"
+    perform "no access-list 199" iosconfig
     puts "\nDone!\n"
     finish_statement
 } 
@@ -362,6 +378,16 @@ proc find_dest_next_hop_interface {destlookupnexthop} {
 }
     
 proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration size} {
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
+	if {[regexp {any} $ipsource] && [regexp {any} $ipdest]} {
+          puts "\n"
+          puts "***FAILURE*** Both IP source and IP destination are \"any any\", needs to have single SOURCE IP. \n\n\[ENDING PROGRAM\]"
+          perform "no monitor capture CAPTURE"
+          perform "no ip access-list extended CAPTURE-FILTER" iosconfig
+          perform "no class-map CAPTURE_CLASS_MAP" iosconfig
+		  return
+       }
+
     if {$ctype != "control"} {
         if {[regexp {any} $ipdest]} {
           set destlookupnexthop "0.0.0.0/0"
@@ -373,9 +399,15 @@ proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration s
           }
         }
         set interfaceresult [find_dest_next_hop_interface $destlookupnexthop]
-        if {$interfaceresult != ""}{ 
+        if {$interfaceresult != ""} { 
             set additionalinterface $interfaceresult
-            puts "Found Reverse Interface: $additionalinterface \n"
+            debugputs "\(INFO\) Found Reverse Interface: $additionalinterface"
+        } else {
+            puts "\n"
+            puts "***FAILURE*** Failed to find Reverse Interface!!"
+			puts "\n"
+			puts "\[ENDING PROGRAM\]"
+            return
         }
     }
   
@@ -388,53 +420,63 @@ proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration s
     }
     if { [info exists any_s_d] } {
             ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            debugputs "ip access-list ex CAPTURE-FILTER $any_s_d"
             set captureacl "$any_s_d"
-      } else {
+        } else {
             ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list ex CAPTURE-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
             set captureacl "$source_dest \n $dest_source"
-      }
+        }
   
-    no monitor capture CAPTURE
+    perform "no monitor capture CAPTURE"
+	perform "no class-map CAPTURE_CLASS_MAP" iosconfig
     if {[file exists bootflash:CAPTURE.pcap]} {
         file delete -force -- bootflash:CAPTURE.pcap
         }
     ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
+    debugputs "class-map CAPTURE_CLASS_MAP"
+    debugputs "    match access-group name CAPTURE-FILTER"
     set buffersize [expr $size + 10]
+    debugputs "\(INFO\) Buffersize additon 10 + $size = $buffersize MB"
     if {$ctype == "control"} {
-        monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
-        monitor capture CAPTURE file location bootflash:CAPTURE.pcap buffer-size $buffersize size $size control-plane both 
-        monitor capture CAPTURE limit duration $duration packet-len 1600
+        noexec_perform "monitor capture CAPTURE class-map CAPTURE_CLASS_MAP"
+        noexec_perform "monitor capture CAPTURE file location bootflash:CAPTURE.pcap buffer-size $buffersize size $size control-plane both "
+        noexec_perform "monitor capture CAPTURE limit duration $duration packet-len 172"
     } else { 
-          monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
-          monitor capture CAPTURE limit packet-len 1600
-          monitor capture CAPTURE interface $sinterface both file location bootflash:CAPTURE.pcap buffer-size $size limit duration $duration
-      if {[info exists $additionalinterface]} {
-          monitor capture CAPTURE interface $additionalinterface in
-      }
+          noexec_perform "monitor capture CAPTURE class-map CAPTURE_CLASS_MAP"
+          noexec_perform "monitor capture CAPTURE limit packet-len 172"
+          noexec_perform "monitor capture CAPTURE interface $sinterface both file location bootflash:CAPTURE.pcap buffer-size $buffersize size $size limit duration $duration"
+      if {[info exists additionalinterface]} {
+          noexec_perform "monitor capture CAPTURE interface $additionalinterface in"
+        }
     }
 
-    monitor capture CAPTURE start
+    noexec_perform "monitor capture CAPTURE start"
     set total $duration
     for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
     puts ""
-    set check [exec "show monitor capture CAPTURE"]
+    set check [perform "show monitor capture CAPTURE"]
     set stop 0
     while {$stop < 2} {
     if {[regexp {Inactive} $check]} {
         set stop 3;
         } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-    exec "monitor capture CAPTURE stop"
+    perform "monitor capture CAPTURE stop"
     after 1000
-    exec "no monitor capture CAPTURE"
-    exec "no monitor capture CAPTURE"
-    ios_config "no ip access-list extended CAPTURE-FILTER"
+    perform "no monitor capture CAPTURE"
+    perform "no monitor capture CAPTURE"
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
+    perform "no class-map CAPTURE_CLASS_MAP" iosconfig
     puts "\nDone!\n"
     finish_statement
 }
 
 
 proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration size} {
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
       set any_s_d [lindex $aclresults 0]
@@ -444,30 +486,35 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
     }
     if { [info exists any_s_d] } {
             ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            debugputs "ip access-list ex CAPTURE-FILTER $any_s_d"
             set captureacl "$any_s_d"
-      } else {
+        } else {
             ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list ex CAPTURE-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
             set captureacl "$source_dest \n $dest_source"
-      }
-  
-    exec "no monitor capture CAPTURE"
+        }
+
+    perform "no monitor capture CAPTURE"
+	puts ""
     if {[file exists flash:CAPTURE.pcap]} {
         file delete -force -- flash:CAPTURE.pcap
         }
     set buffsize [expr $size * 1000]
-    monitor capture CAPTURE access-list CAPTURE-FILTER
-    monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size size $size
-    monitor capture CAPTURE limit duration $duration packet-len 1600
+    noexec_perform "monitor capture CAPTURE access-list CAPTURE-FILTER"
+    noexec_perform "monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size size $size"
+    noexec_perform "monitor capture CAPTURE limit duration $duration packet-len 172"
     if {$ctype == "control"} {
-      monitor capture CAPTURE control-plane both
+      noexec_perform "monitor capture CAPTURE control-plane both"
     } else { 
-      monitor capture CAPTURE interface $sinterface both
+      noexec_perform "monitor capture CAPTURE interface $sinterface both"
       }
-    monitor capture CAPTURE start
+    noexec_perform "monitor capture CAPTURE start"
     set total $duration
     for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
     puts ""
-    set check [exec "show monitor capture CAPTURE"]
+    set check [perform "show monitor capture CAPTURE"]
     set stop 0
     while {$stop < 2} {
     if {[regexp {Inactive} $check]} {
@@ -475,15 +522,16 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
         } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
     puts "Exporting capture to flash:CAPTURE.pcap"
-    exec "monitor capture CAPTURE stop"
-    exec "no monitor capture CAPTURE"
-    ios_config "no ip access-list extended CAPTURE-FILTER"
+    perform "monitor capture CAPTURE stop"
+    perform "no monitor capture CAPTURE"
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     puts "\nDone!\n"
     puts "'show monitor capture file flash:CAPTURE.pcap' to see local wireshark summary"
     finish_statement
 }
 
 proc capture_commands3800 { protocol ipsource ipdest ctype sinterface duration size} {
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
       set any_s_d [lindex $aclresults 0]
@@ -493,51 +541,59 @@ proc capture_commands3800 { protocol ipsource ipdest ctype sinterface duration s
     }
     if { [info exists any_s_d] } {
             ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            debugputs "ip access-list ex CAPTURE-FILTER  $any_s_d"
             set captureacl "$any_s_d"
-      } else {
+        } else {
             ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list ex CAPTURE-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
             set captureacl "$source_dest \n $dest_source"
-      }
-  
-    exec "no monitor capture CAPTURE"
+        }
+
+    perform "no monitor capture CAPTURE"
+    perform "no class-map CAPTURE_CLASS_MAP" iosconfig
+
     if {[file exists flash:CAPTURE.pcap]} {
         file delete -force -- flash:CAPTURE.pcap
         }
     ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
+    debugputs "class-map CAPTURE_CLASS_MAP"
+	debugputs "    match access-group name CAPTURE-FILTER"
     if {$ctype == "control"} {
-      monitor capture CAPTURE class-map CAPTURE_CLASS_MAP 
-      monitor capture CAPTURE limit packet-len 1600
-      monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration
-      monitor capture CAPTURE control-plane both 
+      noexec_perform "monitor capture CAPTURE class-map CAPTURE_CLASS_MAP "
+      noexec_perform "monitor capture CAPTURE limit packet-len 172"
+      noexec_perform "monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration"
+      noexec_perform "monitor capture CAPTURE control-plane both "
   
     } else { 
-          monitor capture CAPTURE class-map CAPTURE_CLASS_MAP
-          monitor capture CAPTURE limit packet-len 1600
-          monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration
-          monitor capture CAPTURE interface $sinterface both 
+          noexec_perform "monitor capture CAPTURE class-map CAPTURE_CLASS_MAP"
+          noexec_perform "monitor capture CAPTURE limit packet-len 172"
+          noexec_perform "monitor capture CAPTURE file location flash:CAPTURE.pcap buffer-size $size limit duration $duration"
+          noexec_perform "monitor capture CAPTURE interface $sinterface both "
       }
     
-    monitor capture CAPTURE start
+    noexec_perform "monitor capture CAPTURE start"
     set total $duration
     for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
     puts ""
-    set check [exec "show monitor capture CAPTURE"]
+    set check [perform "show monitor capture CAPTURE"]
     set stop 0
     while {$stop < 2} {
     if {[regexp {Inactive} $check]} {
         set stop 3;
         } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-    exec "monitor capture CAPTURE stop"
-    #puts "Exporting capture to flash:CAPTURE.pcap"
-    #exec "monitor capture CAPTURE export location flash:CAPTURE.pcap"
-    exec "no monitor capture CAPTURE"
-    ios_config "no ip access-list extended CAPTURE-FILTER"
+    perform "monitor capture CAPTURE stop"
+    perform "no monitor capture CAPTURE"
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
+    perform "class-map CAPTURE_CLASS_MAP" iosconfig
     puts "\nDone!\n"
     finish_statement
 }
 
 proc capture_commands4400 { protocol ipsource ipdest ctype sinterface duration size} {
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
       set any_s_d [lindex $aclresults 0]
@@ -547,46 +603,53 @@ proc capture_commands4400 { protocol ipsource ipdest ctype sinterface duration s
     }
     if { [info exists any_s_d] } {
               ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+              debugputs "ip access-list ex CAPTURE-FILTER $any_s_d"
               set captureacl "$any_s_d"
         } else {
-              ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list ex CAPTURE-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
               set captureacl "$source_dest \n $dest_source"
         }
     
-    exec "no monitor capture CAPTURE"
+    perform "no monitor capture CAPTURE"
+	puts ""
+
     if {[file exists flash:CAPTURE.pcap]} {
         file delete -force -- flash:CAPTURE.pcap
         }
   
     if {$ctype == "control"} {
-      monitor capture CAPTURE limit packet-len 1600 duration $duration 
-      monitor capture CAPTURE access-list CAPTURE-FILTER buffer size $size control-plane both
+      noexec_perform "monitor capture CAPTURE limit packet-len 172 duration $duration" 
+      noexec_perform "monitor capture CAPTURE access-list CAPTURE-FILTER buffer size $size control-plane both"
   
     } else { 
-      monitor capture CAPTURE limit packet-len 1600 duration $duration 
-      monitor capture CAPTURE access-list CAPTURE-FILTER buffer size $size interface $sinterface both
+      noexec_perform "monitor capture CAPTURE limit packet-len 172 duration $duration "
+      noexec_perform "monitor capture CAPTURE access-list CAPTURE-FILTER buffer size $size interface $sinterface both"
       }
-    monitor capture CAPTURE start
+    noexec_perform "monitor capture CAPTURE start"
     set total $duration
     for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
     puts ""
-    set check [exec "show monitor capture CAPTURE"]
+    set check [perform "show monitor capture CAPTURE"]
     set stop 0
     while {$stop < 2} {
     if {[regexp {Inactive} $check]} {
         set stop 3;
         } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-    puts "Exporting capture to bootflash:CAPTURE.pcap"
-    exec "monitor capture CAPTURE stop"
-    exec "monitor capture CAPTURE export bootflash:CAPTURE.pcap"
-    exec "no monitor capture CAPTURE"
-    ios_config "no ip access-list extended CAPTURE-FILTER"
+    debugputs "\(INFO\) Exporting capture to bootflash:CAPTURE.pcap"
+    perform "monitor capture CAPTURE stop"
+    perform "monitor capture CAPTURE export bootflash:CAPTURE.pcap"
+    perform "no monitor capture CAPTURE"
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     puts "\nDone!\n"
     finish_statement
 }
 
 proc capture_commands1000 { protocol ipsource ipdest ctype sinterface duration size} {
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
       set any_s_d [lindex $aclresults 0]
@@ -595,55 +658,62 @@ proc capture_commands1000 { protocol ipsource ipdest ctype sinterface duration s
       set dest_source [lindex $aclresults 1]
     }
     if { [info exists any_s_d] } {
-              ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
-              set captureacl "$any_s_d"
+            ios_config "ip access-list ex CAPTURE-FILTER" "$any_s_d"
+            debugputs "ip access-list ex CAPTURE-FILTER $any_s_d"
+            set captureacl "$any_s_d"
         } else {
-              ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
-              set captureacl "$source_dest \n $dest_source"
+            ios_config "ip access-list ex CAPTURE-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list ex CAPTURE-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
+            set captureacl "$source_dest \n $dest_source"
         }
   
-    exec "no monitor capture CAPTURE"
+    perform "no monitor capture CAPTURE"
     if {[file exists flash:CAPTURE.pcap]} {
         file delete -force -- flash:CAPTURE.pcap
         }
-    monitor capture CAPTURE limit packet-len 1600
-    monitor capture CAPTURE access-list CAPTURE-FILTER
-    monitor capture CAPTURE buffer size $size
-    monitor capture CAPTURE limit duration $duration
+    noexec_perform "monitor capture CAPTURE limit packet-len 172"
+    noexec_perform "monitor capture CAPTURE access-list CAPTURE-FILTER"
+    noexec_perform "monitor capture CAPTURE buffer size $size"
+    noexec_perform "monitor capture CAPTURE limit duration $duration"
   
     if {$ctype == "control"} {
-      monitor capture CAPTURE control-plane both
+      noexec_perform "monitor capture CAPTURE control-plane both"
     } else { 
-      monitor capture CAPTURE interface $sinterface both
+      noexec_perform "monitor capture CAPTURE interface $sinterface both"
       }
-    monitor capture CAPTURE start
+    noexec_perform "monitor capture CAPTURE start"
     set total $duration
     for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
     puts ""
-    set check [exec "show monitor capture CAPTURE"]
+    set check [perform "show monitor capture CAPTURE"]
     set stop 0
     while {$stop < 2} {
     if {[regexp {Inactive} $check]} {
         set stop 3;
         } else {puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop}
     }
-    puts "Exporting capture to flash:CAPTURE.pcap"
-    exec "monitor capture CAPTURE stop"
-    exec "monitor capture CAPTURE export flash:CAPTURE.pcap"
-    exec "no monitor capture CAPTURE"
-    ios_config "no ip access-list extended CAPTURE-FILTER"
+    debugputs "\(INFO\)Exporting capture to flash:CAPTURE.pcap"
+    perform "monitor capture CAPTURE stop"
+    perform "monitor capture CAPTURE export flash:CAPTURE.pcap"
+    perform "no monitor capture CAPTURE"
+    perform "no ip access-list extended CAPTURE-FILTER" iosconfig
     puts "\nDone!\n"
     finish_statement
 }
 
 proc finish_statement {} {
     set allusers [exec "who"]
-    set current_user [foreach {line} [split $allusers "\n"] {
-        if {[regexp {\*} $line]} {
-            set foundx $line; set user [regexp -all -inline {\S+} $foundx]}
-            }; lindex $user 4]
-    set allusers [exec "show aaa user all | i $current_user"]
-    set current_user [string trim [lindex [split $allusers "="] 1]]
+    set who_user [foreach {line} [split $allusers "\n"] {if {[regexp {\*} $line]} { set foundx $line; set user [regexp -all -inline {\S+} $foundx]}}; lindex $user 4]
+    set allusers [exec "show aaa sessions | i $who_user"]
+    set current_user [string trim [lindex [split $allusers ":"] 1]]
+    set temp [string trim [lindex [split $allusers ":"] 1]]
+    if {[string first "\n" $temp] == -1} {
+        set current_user $temp
+    } else {
+    set current_user [string trim [string range $temp 0 [string first "\n" $temp]]]
+    }
     set showip [exec "show tcp br"]
     set current_ip [foreach {line} [split $showip "\n"] {
         if {[regexp {\.22\s} $line]} {
@@ -665,7 +735,7 @@ proc finish_statement {} {
 }
 
 
-proc display_cli_packet_search { version } {
+proc cli_show_filters { version } {
     switch -glob $version {
         9*   {flash_devices}
         45*  {bootflash_devices}
@@ -744,33 +814,36 @@ proc bootflash_devices {} {
    "
 }
 
- 
+proc displayhelp {} {
+    puts "\n\[HELP\]:\nProvide source and destination {ip|any} with optional interface
+        \n Examples:
+         \[syntax\] wireshark <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <capture_type> <duration seconds> <capture size MB>
+         wireshark ip any any 
+         wireshark ip 192.168.25.2 any
+         wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1
+         wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1 40 10
+         wireshark ip 192.168.25.2 192.168.30.20 control 60 30
+    
+         wireshark tcp any any 
+         wireshark tcp 192.168.25.2 any
+         wireshark tcp 192.168.25.2 192.168.30.20:443 Gi1/0/1
+         wireshark tcp 192.168.25.2:443 192.168.30.20 Gi1/0/1 40 10
+    
+         wireshark udp any any 
+         wireshark udp 192.168.25.2 any
+         wireshark udp 192.168.25.2 192.168.30.20:53 Gi1/0/1
+         wireshark udp 192.168.25.2:53 192.168.30.20 Gi1/0/1 40 10
+    
+         ***If you want display pcap on cli examples type:
+         wireshark filter
 
-if {$::argc == 0} {puts "\[HELP\]:\nProvide source and destination {ip|any} with optional interface
-    \n Examples:
-     \[syntax\] wireshark <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <capture_type> <duration seconds> <capture size MB>
-     wireshark ip any any 
-     wireshark ip 192.168.25.2 any
-     wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1
-     wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1 40 10
-     wireshark ip 192.168.25.2 192.168.30.20 control 60 30
+         ***If you want to see commands sent to IOS:
+         wireshark --debug <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <capture_type> <duration seconds> <capture size MB>
+       
+       "
+}
 
-     wireshark tcp any any 
-     wireshark tcp 192.168.25.2 any
-     wireshark tcp 192.168.25.2 192.168.30.20:443 Gi1/0/1
-     wireshark tcp 192.168.25.2:443 192.168.30.20 Gi1/0/1 40 10
-
-     wireshark udp any any 
-     wireshark udp 192.168.25.2 any
-     wireshark udp 192.168.25.2 192.168.30.20:53 Gi1/0/1
-     wireshark udp 192.168.25.2:53 192.168.30.20 Gi1/0/1 40 10
-
-     ***If you want display pcap on cli examples type:
-     wireshark filter
-   
-   "
-   
-} else {
+proc getversion {} {
     set get_version [exec "show ver"]
     foreach {line} [split $get_version "\n"]  {
         if {[regexp -nocase "model number" $line]} {
@@ -785,44 +858,59 @@ if {$::argc == 0} {puts "\[HELP\]:\nProvide source and destination {ip|any} with
         }
     }
     if {![info exists found_version]} {
-          puts "Unable to determine platform. "
-      return
+        puts "Unable to determine platform. "
+        return 0
     }
     
     if {[regexp {\d\d\d\d*} $found_version]} {
-        set device_string "Device version: "
         set version [lindex [regexp -inline {\d\d\d\d} $found_version] 0]
-        append device_string $version
+        puts "Device version: $version"
+        return "$version"
     } else {
         puts "Unable to determine platform. "
-        return
-    }
-       
-    if {$::argc == 1 && [lindex $argv 0] == "filter"} {
-        display_cli_packet_search $version ; return 
-        }
-    if {[expr $::argc > 1] && [expr $::argc < 3]} {
-        puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
-    } else {
-        set debugfound [lsearch $argv "debug"]
-        if {$debugfound != -1} {
-            global debug; set debug 1; puts "debugging"
-            set newarglist [list]
-            foreach {argfound} $argv {
-                if {$argfound == "debug"} {} else {
-                    lappend newarglist $argfound
-                }
-            }
-        
-        if {$::argc == 3} {
-          clear_screen
-          puts $device_string
-          main $version [lindex $newarglist 0] [lindex $newarglist 1] [lindex $newarglist 2]
-        } else {
-            main $version [lindex $newarglist 0] [lindex $newarglist 1] [lindex $newarglist 2] [lindex $newarglist 3] [lindex $newarglist 4] [lindex $newarglist 5]
-        }
-        }
+        return 0
     }
 }
+
+
+proc main {} {
+    if {$::argc == 0} {
+        displayhelp; return
+        }
+    set version [getversion]
+    if {$::argc == 1 && [lindex $::argv 0] == "filter"} {
+            cli_show_filters $version; return 
+        }
+    if {[lindex $::argv 0] == "--debug"} {
+        if {[expr $::argc < 4]} {
+            puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
+        } else {
+            clear_screen
+            global debug; set debug 1; puts "\[Debugging mode\]"
+            if {$version == 0} { return }
+            if {[expr $::argc == 4]} {
+                gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3]
+            } else {
+                gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6]
+            }
+        }
+        return
+    } else {
+        if {$::argc < 3} {
+		    puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
+        } else {
+            global debug; set debug 0 
+            clear_screen
+            if {$version == 0} { return }
+            if {[expr $::argc == 3]} {
+                gatherinformation_and_begin_capture $version [lindex $::argv 0] [lindex $::argv 1] [lindex $::argv 2]
+            } else {
+                gatherinformation_and_begin_capture $version [lindex $::argv 0] [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5]
+            }
+        }
+    }    
+}
+        
+main 
 
 tclquit
