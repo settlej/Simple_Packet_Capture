@@ -12,7 +12,7 @@ Upload capture_program.tcl to flash of Cisco device</br>
 switch# wireshark </br>
 
  Examples:
-     [syntax] wireshark <protocol> <source_ip:[port]> <dest_ip:[port]> <capture_type> <duration_seconds> <capture_size_MB>
+     [syntax] wireshark <protocol> <source_ip:[port]> <dest_ip:[port]> <capture_type> <duration_seconds> <capture_size_MB> <mtu>
 
          wireshark ip any any 
          wireshark ip 192.168.25.2 any
