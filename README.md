@@ -39,3 +39,9 @@ switch# wireshark </br>
          Supported platfroms:
          CSR1000v, ASR1004, 3560, 3850, 4400, 4500 (sup-8), 9300, 9400
      
+# Help and Info
+![Image of Help](https://github.com/settlej/Simple_Packet_Capture/blob/master/screen_shots/help.gif)</br></br>
+# Normal Run
+![Image of Help](https://github.com/settlej/Simple_Packet_Capture/blob/master/screen_shots/normal.gif)</br></br>
+# Debug Run
+![Image of Help](https://github.com/settlej/Simple_Packet_Capture/blob/master/screen_shots/debug.gif)</br></br>
