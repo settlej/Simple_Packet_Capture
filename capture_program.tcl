@@ -306,12 +306,15 @@ proc acl_generator {protocol ipsource ipdest} {
 }
 
 proc check_capture_stats {} {
+    puts $::version
     switch -glob $::version {
-        3* {set status [exec "show monitor capture point POINT"]}
-        default {set status [exec "show monitor capture CAPTURE"]} } 
+        3* {set status [perform "show monitor capture point POINT"]}
+        default {set status [perform "show monitor capture CAPTURE"]} } 
     if {[regexp {Inactive} $status]} {
+        puts "failed"
         return 0
     } else {
+        puts "success"
         return 1
     }
 }
@@ -351,9 +354,9 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
     # <wait> show monitor capture buffer BUFF parameters
     # <wait> or show monitor capture buffer BUFF dump
     perform "monitor capture point start POINT"
-
+    set startcheck 0
     set total $duration
-    for {set i 0 } {$i <= [expr $total} {incr i} {
+    for {set i 0 } {$i <= [expr $total]} {incr i} {
         if {$i == 0} {puts "Starting!\n"}
         progressbar $i $total $duration
         flush stdout
@@ -364,17 +367,18 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
         } else {
             set started_succesfully 0
         }
-      #  if { [expr {($x % 3) == 0}] } {
-      #      #check every 4 seconds if completed or never started.
-      #      set status [check_capture_stats]
-      #      if {$status == 0 && $started_succesfully == 1} {set i [expr $total - 1]}
-      #      #progressbar $total $total $total; set i [expr $total + 1]
-      #      if {$status == 0 && $started_succesfully == 0 && $i < [expr $total - 2]} {
-      #          puts ""
-      #          puts "Something may have went wrong, please check logging"
-      #          set i [expr $total + 1]
-      #      }
-      #  }
+        if { [expr {($i % 3) == 0}] } {
+            #check every 4 seconds if completed or never started.
+            set status [check_capture_stats]
+            if {$status == 0 && $started_succesfully == 1} {set i [expr $total - 1]}
+            #progressbar $total $total $total; set i [expr $total + 1]
+            if {$status == 0 && $started_succesfully == 0 && $i < [expr $total - 2]} {
+                puts ""
+                puts "Something may have went wrong, please check logging"
+                set i [expr $total + 1]
+            }
+        }
+        puts $started_succesfully
     }
     puts ""
     debugputs "\(INFO\) Checking capture status"
