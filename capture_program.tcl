@@ -24,6 +24,9 @@
 #
 # Simple Cisco Packet Capture.
 
+
+# prints progressbar to count down time until program is done captureing
+# progress is based on the $duration variable. 
 proc progressbar {cur tot count} {
     # if you don't want to redraw all the time, uncomment and change ferquency
     #if {$cur % ($tot/300)} { return }
@@ -32,10 +35,6 @@ proc progressbar {cur tot count} {
     set half [expr {$total/2}]
     set percent [expr {100.*$cur/$tot}]
     set val (\ [format "%6.2f%%" $percent]\ )
-    #set str "[string repeat \b 50] ) |[string repeat = [
-    #            expr {round($percent*$total/100)}]][
-    #                    string repeat { } [expr {$total-round($percent*$total/100)}]]| [string repeat \b 52]"
-    #set str "[string range $str 0 $half]$val[string range $str [expr {$half+[string length $val]-1}] end]"
     set str "|[string repeat = [expr {round($percent*$total/100)}]][string repeat { } [expr {$total-round($percent*$total/100)}]]|[string repeat \b 110]"
     set str "$val [string range $str 0 $half][string range $str [expr {$half+[string length $val]-1}] end]"
     puts -nonewline stderr $str
@@ -47,17 +46,23 @@ proc clear_screen {} {
     ios_config "line vty 0 15" "no international"
 }
 
+# function to display string only when debug variable set to "1"
 proc debugputs {msg} {
     if {$::debug == 1} {
        puts "\[DEBUG\]\: $msg"
     }
 }
 
+# function to send to debug checker for display or not then execute IOS command without using "exec" tcl command
+# Some IOS commands requried confirmation and "exec" puts command in blocking state until done, which is not
+# useful when needing to see output on stdout.
 proc noexec_perform {event} {
     debugputs $event
     $event
 }
 
+# function to send to debug checker for display or not then execute IOS command using "exec" tcl command
+# exec allows for output capture to variables.
 proc perform {event {iosconfig { }} } {
     debugputs $event
     if {$iosconfig != { }} {
@@ -300,6 +305,17 @@ proc acl_generator {protocol ipsource ipdest} {
   }
 }
 
+proc check_capture_stats {} {
+    switch -glob $::version {
+        3* {set status [exec "show monitor capture point POINT"]}
+        default {set status [exec "show monitor capture CAPTURE"]} } 
+    if {[regexp {Inactive} $status]} {
+        return 0
+    } else {
+        return 1
+    }
+}
+
 proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration size} {
     perform "monitor capture point stop all"
     perform "no access-list 199" iosconfig
@@ -330,13 +346,36 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
        perform "monitor capture point ip process-switched POINT both"
     } else { 
       perform "monitor capture point ip cef POINT $sinterface both" 
-      }
+    }
     perform "monitor capture point associate POINT BUFF"
     # <wait> show monitor capture buffer BUFF parameters
     # <wait> or show monitor capture buffer BUFF dump
     perform "monitor capture point start POINT"
+
     set total $duration
-    for {set i 0 } {$i <= $total} {incr i} {if {$i == 0} {puts "Starting!\n"}; progressbar $i $total $duration; flush stdout ; after 1000; incr duration -1}
+    for {set i 0 } {$i <= [expr $total} {incr i} {
+        if {$i == 0} {puts "Starting!\n"}
+        progressbar $i $total $duration
+        flush stdout
+        after 1000; incr duration -1
+        if {$duration == 3} {set startcheck [check_capture_stats]}
+        if {$startcheck == 1} {
+            set started_succesfully 1
+        } else {
+            set started_succesfully 0
+        }
+      #  if { [expr {($x % 3) == 0}] } {
+      #      #check every 4 seconds if completed or never started.
+      #      set status [check_capture_stats]
+      #      if {$status == 0 && $started_succesfully == 1} {set i [expr $total - 1]}
+      #      #progressbar $total $total $total; set i [expr $total + 1]
+      #      if {$status == 0 && $started_succesfully == 0 && $i < [expr $total - 2]} {
+      #          puts ""
+      #          puts "Something may have went wrong, please check logging"
+      #          set i [expr $total + 1]
+      #      }
+      #  }
+    }
     puts ""
     debugputs "\(INFO\) Checking capture status"
     set check [perform "show monitor capture point POINT"]
@@ -721,11 +760,13 @@ proc finish_statement {} {
             }; lindex $ip 1]
     puts [string repeat * 20]
     puts "Get copy of pcap from flash via \"scp\" or SecureFx"
+    # Display output for Windows Command Promtp, cut and paste
     set cmdhelper "Windows CMD \'scp $current_user"
     append cmdhelper "@"
     append cmdhelper [string range $current_ip 0 end-3]
     append cmdhelper ":CAPTURE.pcap . & .\\CAPTURE.pcap'"
     puts $cmdhelper
+    # Display output for Powershell, cut and paste
     set cmdhelper "Windows Powershell \'scp $current_user"
     append cmdhelper "@"
     append cmdhelper [string range $current_ip 0 end-3]
@@ -736,86 +777,56 @@ proc finish_statement {} {
 
 
 proc cli_show_filters { version } {
+    # version will determine which help to display
+    # Using switch loop to display correct filter, glob argument provides a regex like match
     switch -glob $version {
-        9*   {flash_devices}
-        45*  {bootflash_devices}
-        38*  {flash_devices}
-        3*   {flash_devices}
-        1004 {puts "CLI File Display Unsupported. Must SCP to local Computer!"}
-        100* {flash_devices}
-        default {puts "CLI File Display Unsupported. Must SCP to local Computer!"}
+        9*   {cli_filter_help}
+        # bootflash is string argument passed to cli_filter_help
+        45*  {cli_filter_help bootflash}
+        38*  {cli_filter_help}
+        356* {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+        1004 {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+        100* {cli_filter_help}
+        default {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
     }
 }
 
-proc flash_devices {} {
+proc cli_filter_help {{storage flash}} {
    puts "
    
     #Basic filters
-       show monitor capture file bootflash:CAPTURE.pcap brief
-       show monitor capture file flash:CAPTURE.pcap display-filter icmp
-       show monitor capture file flash:CAPTURE.pcap display-filter tcp 
-       show monitor capture file flash:CAPTURE.pcap display-filter udp 
+       show monitor capture file $storage:CAPTURE.pcap brief
+       show monitor capture file $storage:CAPTURE.pcap display-filter icmp
+       show monitor capture file $storage:CAPTURE.pcap display-filter tcp 
+       show monitor capture file $storage:CAPTURE.pcap display-filter udp 
     
     #Routing protocols
-       show monitor capture file flash:CAPTURE.pcap display-filter \"eigrp || ospf || tcp.port == 179\"
+       show monitor capture file $storage:CAPTURE.pcap display-filter \"eigrp || ospf || tcp.port == 179\"
     
     #Web traffic
-       show monitor capture file flash:CAPTURE.pcap display-filter \"tcp.port == 80 || tcp.port == 443\"
+       show monitor capture file $storage:CAPTURE.pcap display-filter \"tcp.port == 80 || tcp.port == 443\"
     
     #DHCP
-       show monitor capture file flash:CAPTURE.pcap display-filter dhcp
+       show monitor capture file $storage:CAPTURE.pcap display-filter dhcp
     
     #DNS
-       show monitor capture file flash:CAPTURE.pcap display-filter \"udp.port == 53\"
+       show monitor capture file $storage:CAPTURE.pcap display-filter \"udp.port == 53\"
     
     #Traffic to or from IP
        \[First example does src \'and\' dst for 1.1.1.1 use ip.addr\]
-       show monitor capture file flash:CAPTURE.pcap display-filter \"ip.addr == 1.1.1.1\"
-       show monitor capture file flash:CAPTURE.pcap display-filter \"ip.src_host == 1.1.1.1\"
-       show monitor capture file flash:CAPTURE.pcap display-filter \"ip.dst_host == 1.1.1.1\"
+       show monitor capture file $storage:CAPTURE.pcap display-filter \"ip.addr == 1.1.1.1\"
+       show monitor capture file $storage:CAPTURE.pcap display-filter \"ip.src_host == 1.1.1.1\"
+       show monitor capture file $storage:CAPTURE.pcap display-filter \"ip.dst_host == 1.1.1.1\"
     
     #TCP Rest Flag
-       Show monitor capture file flash:CAPTURE.pcap display-filter \"tcp.flags.reset == 1\"
+       Show monitor capture file $storage:CAPTURE.pcap display-filter \"tcp.flags.reset == 1\"
     
    "
 }
 
-
-proc bootflash_devices {} {
-   puts "
-   
-    #Basic filters
-       show monitor capture file bootflash:CAPTURE.pcap brief
-       show monitor capture file bootflash:CAPTURE.pcap display-filter icmp
-       show monitor capture file bootflash:CAPTURE.pcap display-filter tcp 
-       show monitor capture file bootflash:CAPTURE.pcap display-filter udp 
-    
-    #Routing protocols
-       show monitor capture file bootflash:CAPTURE.pcap display-filter \"eigrp || ospf || tcp.port == 179\"
-    
-    #Web traffic
-       show monitor capture file bootflash:CAPTURE.pcap display-filter \"tcp.port == 80 || tcp.port == 443\"
-    
-    #DHCP
-       show monitor capture file bootflash:CAPTURE.pcap display-filter dhcp
-    
-    #DNS
-       show monitor capture file bootflash:CAPTURE.pcap display-filter \"udp.port == 53\"
-    
-    #Traffic to or from IP
-       \[First example does src \'and\' dst for 1.1.1.1 use ip.addr\]
-       show monitor capture file bootflash:CAPTURE.pcap display-filter \"ip.addr == 1.1.1.1\"
-       show monitor capture file bootflash:CAPTURE.pcap display-filter \"ip.src_host == 1.1.1.1\"
-       show monitor capture file bootflash:CAPTURE.pcap display-filter \"ip.dst_host == 1.1.1.1\"
-    
-    #TCP Rest Flag
-       Show monitor capture file bootflash:CAPTURE.pcap display-filter \"tcp.flags.reset == 1\"
-    
-   "
-}
 
 proc displayhelp {} {
-    #puts "\n\[HELP\]:\nProvide source and destination {ip|any} with optional interface
+    # Help output for methods and option for useage
     puts "\n\n Examples:
          \[syntax\] wireshark <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <control|interface> <duration ses> <capture size MB> <packet-len>
                                                                                                    20 sec           10 MB          172 mtu
@@ -847,12 +858,19 @@ proc displayhelp {} {
 }
 
 proc getversion {} {
+    # Find version of device, "show version" then regex find in output the version,
+    #  Search for model number line that contain model type. Usually 3560, 9300, 9400
+    # Foreach will loop through every line via "\n" from output and look for "model
+    # number", once found split the line via spaces in regex -inline -all and gather
+    # 3rd element.
     set get_version [exec "show ver"]
     foreach {line} [split $get_version "\n"]  {
         if {[regexp -nocase "model number" $line]} {
             set found_version [lindex [regexp -all -inline {\S+} $line] 3]
         }
     }
+    # Most Platforms do not have 'model number' line, 
+    #   manual search for supported platforms via regex
     if {![info exists found_version]} {
        foreach {line} [split $get_version "\n"]  {
             if {[regexp {(CSR1000V)|(C45\d\d)|(ASR100\d)|(ISR44\d\d)} $line]} {
@@ -860,12 +878,15 @@ proc getversion {} {
             } 
         }
     }
+    # Stop program an inform user device will not work.
+    # Checking to see if found_version variable is created
     if {![info exists found_version]} {
         puts "Unable to determine platform. "
         return 0
     }
-    
+    # If device is found get version number and save to $version variable
     if {[regexp {\d\d\d\d*} $found_version]} {
+        global version
         set version [lindex [regexp -inline {\d\d\d\d} $found_version] 0]
         puts "Device version: $version"
         return "$version"
@@ -877,18 +898,24 @@ proc getversion {} {
 
 
 proc main {} {
+    # If no arguments passed to program, display help function to provide help examples.
+    # Stop program after help is dispalyed.
     if {$::argc == 0} {
         displayhelp; return
         }
     set version [getversion]
+    # If 1 argument and if is the word 'filter' will dispaly helper function for show commands
+    # Stop program after help is dispalyed.
     if {$::argc == 1 && [lindex $::argv 0] == "filter"} {
             cli_show_filters $version; return 
         }
+    # debug will display commands used during program run
     if {[lindex $::argv 0] == "--debug"} {
         if {[expr $::argc < 4]} {
             puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
         } else {
             clear_screen
+            #turn on debug for stdout
             global debug; set debug 1; puts "\[Debugging mode\]"
             if {$version == 0} { return }
             if {[expr $::argc == 4]} {
@@ -899,9 +926,11 @@ proc main {} {
         }
         return
     } else {
+        # if protocol with src and dest, not provide, inform user and end program
         if {$::argc < 3} {
 		    puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
         } else {
+            #turn off debug for stdout
             global debug; set debug 0 
             clear_screen
             if {$version == 0} { return }
