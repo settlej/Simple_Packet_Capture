@@ -815,9 +815,10 @@ proc bootflash_devices {} {
 }
 
 proc displayhelp {} {
-    puts "\n\[HELP\]:\nProvide source and destination {ip|any} with optional interface
-        \n Examples:
-         \[syntax\] wireshark <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <capture_type> <duration seconds> <capture size MB>
+    #puts "\n\[HELP\]:\nProvide source and destination {ip|any} with optional interface
+    puts "\n\n Examples:
+         \[syntax\] wireshark <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <control|interface> <duration ses> <capture size MB> <packet-len>
+                                                                                                   20 sec           10 MB          172 mtu
          wireshark ip any any 
          wireshark ip 192.168.25.2 any
          wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1
@@ -825,21 +826,23 @@ proc displayhelp {} {
          wireshark ip 192.168.25.2 192.168.30.20 control 60 30
     
          wireshark tcp any any 
-         wireshark tcp 192.168.25.2 any
+         wireshark tcp 192.168.25.2 any:80
          wireshark tcp 192.168.25.2 192.168.30.20:443 Gi1/0/1
-         wireshark tcp 192.168.25.2:443 192.168.30.20 Gi1/0/1 40 10
+         wireshark tcp 192.168.25.2:443 192.168.30.20 Gi1/0/1 40 10 1500
     
          wireshark udp any any 
          wireshark udp 192.168.25.2 any
          wireshark udp 192.168.25.2 192.168.30.20:53 Gi1/0/1
          wireshark udp 192.168.25.2:53 192.168.30.20 Gi1/0/1 40 10
     
-         ***If you want display pcap on cli examples type:
+         ***If you want display pcap on cli examples:
          wireshark filter
 
-         ***If you want to see commands sent to IOS:
-         wireshark --debug <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <capture_type> <duration seconds> <capture size MB>
+         ***If you want to see commands used:
+         wireshark --debug <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> (including remainder options)
        
+         Supported platfroms:
+         CSR1000v, ASR1004, 3560, 3850, 4400, 4500 (sup-8), 9300, 9400
        "
 }
 
