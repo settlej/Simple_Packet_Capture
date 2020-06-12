@@ -372,18 +372,21 @@ proc check_capture_status {} {
         # capture is operational
         return 1
     }
+    puts status
 }
 
 # function to display moving progress bar
 # will check to see if capture is actually running,
 # usually will run for the full duration time period
 proc run_progress_bar {total} {
+    set finished "false"
     set startcheck 0
     set started_succesfully -1
     for {set i 0} {$i <= [expr $total]} {incr i} {
         if {$i == 0} {puts "\nStarting!\n"}
         progressbar $i $total
         flush stdout
+        if {$finished == "true"} { return }
         after 1000
         if {$i == 1} {set startcheck [check_capture_status]
            if {$startcheck == 1} {
@@ -399,18 +402,19 @@ proc run_progress_bar {total} {
                }
            }
         }
-        if { [expr {($i % 3) == 0}] } {
+        if { [expr {($i % 3) == 0}]} {
             #check every 3 seconds if completed or never started.
             set currentstatus [check_capture_status]
             # If started_successfully is 1 then capture was "Active" based on show command
             # is currentstatus changes to 0 then capture is "Inactive" based on show command
             # if 1 and 0 then capture may have reached size limit and early terminated capture
             # else 0 and 0 then capture didn't seem to start 3 secs into start
-            if { $started_succesfully == 1 && $currentstatus == 0} {set i [expr $total - 1]}
+            if { $started_succesfully == 1 && $currentstatus == 0} {set i [expr $total - 1]; set finished "true"}
             if { $started_succesfully == 0 && $currentstatus == 0 && $i < [expr $total - 2]} {
                 puts ""
                 puts "Capture didn't seem to start, please check logs"
                 set i [expr $total + 1]
+                set finished "true"
             }
         }
     }
@@ -420,6 +424,7 @@ proc run_progress_bar {total} {
 proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration size mtu} {
     perform "monitor capture point stop all"
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     perform "no access-list 199" iosconfig
@@ -470,7 +475,7 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
         }
     }
     perform "monitor capture point stop POINT"
-    debugputs "\(INFO\) Exporting capture to flash:CAPTURE.pcap"
+    puts "Exporting capture to flash:CAPTURE.pcap"
     # export packets in memory to flash as a pcap file
     perform "monitor capture buffer BUFF export flash:CAPTURE.pcap"
     # delete all capture commands and ACL
@@ -565,6 +570,7 @@ proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     perform "no class-map CAPTURE_CLASS_MAP" iosconfig
     if {[file exists bootflash:CAPTURE.pcap]} {
+        debugputs "Deleting bootflash:CAPTURE.pcap"
         file delete -force -- bootflash:CAPTURE.pcap
         }
     ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
@@ -634,6 +640,7 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     puts ""
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     set buffsize [expr $size * 1000]
@@ -659,7 +666,7 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
             puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop
         }
     }
-    puts "Exporting capture to flash:CAPTURE.pcap"
+    puts "Exporting capture to flash:CAPTURE.pcap \(Warning slow\)"
     perform "monitor capture CAPTURE stop"
     perform "no monitor capture CAPTURE"
     perform "no ip access-list extended CAPTURE-FILTER" iosconfig
@@ -692,6 +699,7 @@ proc capture_commands3800 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     perform "no class-map CAPTURE_CLASS_MAP" iosconfig
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
@@ -756,6 +764,7 @@ proc capture_commands4400 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     puts ""
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     if {$ctype == "control"} {
@@ -812,6 +821,7 @@ proc capture_commands1000 { protocol ipsource ipdest ctype sinterface duration s
   
     perform "no monitor capture CAPTURE"
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
     }
     noexec_perform "monitor capture CAPTURE limit packet-len $mtu"
