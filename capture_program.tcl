@@ -308,8 +308,8 @@ proc acl_generator {protocol ipsource ipdest} {
                       }
                   }
               } else {
-                set source_dest "permit ip host $ipsource host $ipdest"
-                set dest_source "permit ip host $ipdest host $ipsource"
+                set source_dest "permit $protocol host $ipsource host $ipdest"
+                set dest_source "permit $protocol host $ipdest host $ipsource"
                 }
         } else {
               if { $ipsource == "any" && $ipdest != "any" } {
@@ -328,8 +328,8 @@ proc acl_generator {protocol ipsource ipdest} {
                            set dest_source " permit $protocol host $ipdest any"
                       }
                   } else {
-                    set source_dest "permit ip any host $ipdest"
-                    set dest_source "permit ip host $ipdest any"
+                    set source_dest "permit $protocol any host $ipdest"
+                    set dest_source "permit $protocol host $ipdest any"
                   }
               } else {
                   if { $protocol == "tcp" || $protocol == "udp" } {
@@ -347,8 +347,8 @@ proc acl_generator {protocol ipsource ipdest} {
                           set dest_source " permit $protocol host $ipsource any"
                       }
                   } else {
-                    set source_dest "permit ip host $ipsource any"
-                    set dest_source "permit ip $ipdest any host $ipsource"
+                    set source_dest "permit $protocol host $ipsource any"
+                    set dest_source "permit $protocol any host $ipsource"
                   }
               }
           }
@@ -372,18 +372,21 @@ proc check_capture_status {} {
         # capture is operational
         return 1
     }
+    puts status
 }
 
 # function to display moving progress bar
 # will check to see if capture is actually running,
 # usually will run for the full duration time period
 proc run_progress_bar {total} {
+    set finished "false"
     set startcheck 0
     set started_succesfully -1
     for {set i 0} {$i <= [expr $total]} {incr i} {
         if {$i == 0} {puts "\nStarting!\n"}
         progressbar $i $total
         flush stdout
+        if {$finished == "true"} { return }
         after 1000
         if {$i == 1} {set startcheck [check_capture_status]
            if {$startcheck == 1} {
@@ -399,18 +402,19 @@ proc run_progress_bar {total} {
                }
            }
         }
-        if { [expr {($i % 3) == 0}] } {
+        if { [expr {($i % 3) == 0}]} {
             #check every 3 seconds if completed or never started.
             set currentstatus [check_capture_status]
             # If started_successfully is 1 then capture was "Active" based on show command
             # is currentstatus changes to 0 then capture is "Inactive" based on show command
             # if 1 and 0 then capture may have reached size limit and early terminated capture
             # else 0 and 0 then capture didn't seem to start 3 secs into start
-            if { $started_succesfully == 1 && $currentstatus == 0} {set i [expr $total - 1]}
+            if { $started_succesfully == 1 && $currentstatus == 0} {set i [expr $total - 1]; set finished "true"}
             if { $started_succesfully == 0 && $currentstatus == 0 && $i < [expr $total - 2]} {
                 puts ""
                 puts "Capture didn't seem to start, please check logs"
                 set i [expr $total + 1]
+                set finished "true"
             }
         }
     }
@@ -419,6 +423,10 @@ proc run_progress_bar {total} {
 # function for capture commands on 3000 series switches except for 3850
 proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration size mtu} {
     perform "monitor capture point stop all"
+    if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
+        file delete -force -- flash:CAPTURE.pcap
+        }
     perform "no access-list 199" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
@@ -463,11 +471,11 @@ proc capture_commands3000 { protocol ipsource ipdest ctype sinterface duration s
         if {[regexp {Inactive} $check]} {
             set stop 3;
         } else {
-            puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop
+            puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture point POINT"]; incr stop
         }
     }
     perform "monitor capture point stop POINT"
-    debugputs "\(INFO\) Exporting capture to flash:CAPTURE.pcap"
+    puts "Exporting capture to flash:CAPTURE.pcap"
     # export packets in memory to flash as a pcap file
     perform "monitor capture buffer BUFF export flash:CAPTURE.pcap"
     # delete all capture commands and ACL
@@ -507,7 +515,7 @@ proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration s
     # Because 2 interfaces are monitored there needs to be filtering to capture only traffic destined to monitor interface
     # and if 'any any' is defined then you might capture lots of irrelivant information.  Single SOURCE IP is a protection
     # for busy uplink interfaces if monitoring an access port
-    if {[regexp {any} $ipsource] && [regexp {any} $ipdest]} {
+    if {[regexp {any} $ipsource] && [regexp {any} $ipdest] && $ctype != "control"} {
           puts "\n"
           puts "***FAILURE*** Both IP source and IP destination are \"any any\", needs to have single SOURCE IP. \n\n\[ENDING PROGRAM\]"
           perform "no monitor capture CAPTURE"
@@ -562,6 +570,7 @@ proc capture_commands4500 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     perform "no class-map CAPTURE_CLASS_MAP" iosconfig
     if {[file exists bootflash:CAPTURE.pcap]} {
+        debugputs "Deleting bootflash:CAPTURE.pcap"
         file delete -force -- bootflash:CAPTURE.pcap
         }
     ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
@@ -631,6 +640,7 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     puts ""
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     set buffsize [expr $size * 1000]
@@ -656,7 +666,7 @@ proc capture_commands9000 { protocol ipsource ipdest ctype sinterface duration s
             puts "Compiling packet capture to pcap format..."; after 3000; set check [exec "show monitor capture CAPTURE"]; incr stop
         }
     }
-    puts "Exporting capture to flash:CAPTURE.pcap"
+    puts "Exporting capture to flash:CAPTURE.pcap \(Warning slow\)"
     perform "monitor capture CAPTURE stop"
     perform "no monitor capture CAPTURE"
     perform "no ip access-list extended CAPTURE-FILTER" iosconfig
@@ -689,6 +699,7 @@ proc capture_commands3800 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     perform "no class-map CAPTURE_CLASS_MAP" iosconfig
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     ios_config "class-map CAPTURE_CLASS_MAP" "match access-group name CAPTURE-FILTER"
@@ -753,6 +764,7 @@ proc capture_commands4400 { protocol ipsource ipdest ctype sinterface duration s
     perform "no monitor capture CAPTURE"
     puts ""
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
         }
     if {$ctype == "control"} {
@@ -809,6 +821,7 @@ proc capture_commands1000 { protocol ipsource ipdest ctype sinterface duration s
   
     perform "no monitor capture CAPTURE"
     if {[file exists flash:CAPTURE.pcap]} {
+        debugputs "Deleting flash:CAPTURE.pcap"
         file delete -force -- flash:CAPTURE.pcap
     }
     noexec_perform "monitor capture CAPTURE limit packet-len $mtu"
@@ -953,7 +966,14 @@ proc displayhelp {} {
          wireshark udp 192.168.25.2 any
          wireshark udp 192.168.25.2 192.168.30.20:53 Gi1/0/1
          wireshark udp 192.168.25.2:53 192.168.30.20 Gi1/0/1 40 10
-    
+ 
+         \[syntax\] wireshark erspan <protocol> <source_ip> <dest_ip> <monitor interface> <max duration sec>
+         wireshark erspan ip any any
+         wireshark erspan ip any any Gi1/0/1
+         wireshark erspan ip any any Gi1/0/1 192.168.1.100
+         wireshark erspan ip any any Gi1/0/1 192.168.1.100 50
+         wireshark erspan --debug tcp any any
+
          ***If you want display pcap on cli examples:
          wireshark filter
 
@@ -1004,6 +1024,152 @@ proc getversion {} {
     }
 }
 
+proc erspan_16code {protocol ipsource ipdest erspandest {sinterface {}} {duration 30}} {
+    if {$sinterface == {}} {
+        # If interface not provide at start ask for interface
+        puts "\nAvailable Interfaces:"
+        # Grab interfaces from "show ip interface brief" and using regex to grap interface names into a list
+        set foundinterfaces [regexp -all -inline {[A-Za-z-]+\d\/?\d?\/?\d?\/?\d?\d?} [exec "show ip int br"]] 
+        # find longest interface name for padding on display, used in format below
+        set largestinterfacesize [expr [getlargest_interface $foundinterfaces] + 2]
+        foreach {a b c d e} [join $foundinterfaces " "] {
+            # add padding for clean looking screen display
+            set a [format {%-*s} $largestinterfacesize  $a]
+            set b [format {%-*s} $largestinterfacesize  $b]
+            set c [format {%-*s} $largestinterfacesize  $c]
+            set d [format {%-*s} $largestinterfacesize  $d]
+            set e [format {%-*s} $largestinterfacesize  $e]
+            # creates 5 column print based on padding
+            puts "$a $b $c $d $e"} 
+        set i 0
+        puts " "
+        while {$i < 1} {
+           puts "Which interface to ERSPAN Monitor \[exact name needed\]?"
+           puts -nonewline "\nSelection: "
+           flush stdout
+           gets stdin {sinterface}
+           if {$i > 0} {continue} else {}
+           # simple error checking via searching interface list with its exact name from user input
+           if {[lsearch -exact $foundinterfaces "$sinterface"] == -1} { puts "\nInterface Not found...\n"} else {incr i}
+        }
+    }
+    set ipaddress_available [perform "show ip int br | i Loopback"]
+    if {$ipaddress_available != ""} {
+        set originip [lindex [regexp -all -inline {\S+} $line] 1]
+    } else {
+        puts -nonewline "Unable to located loopback IP.  What ip will the ERSPAN session use as source IP:  "
+        flush stdout
+        gets stdin {originip}
+    } 
+    if {$duration == 30} {
+        puts -nonewline "For safety measure how long to run ERSPAN, in seconds <5-300 recommended> \[Default 30\]:  "
+        flush stdout
+        gets stdin {duration}
+        if {$duration == ""} {
+            set duration 30
+        }
+    }
+    # Monitor session variables
+    set monitor_session "monitor session 15 type erspan-source"
+    set monitor_description "description tcl created erspan via wireshark program"
+    set monitor_source "source interface $sinterface both"
+    set monitor_filter "filter ip access-group ERSPAN-FILTER"
+    set monitor_destination "destination"
+    set monitor_destip "ip address $erspandest"
+    set monitor_id "erspan-id 15"
+    set monitor_origin "origin ip address $originip"
+    set monitor_ttl "ip ttl 10"
+    set monitor_end "end"
+    # Applet EEM variables
+    set emergancy_timer [expr $duration + 10]
+    set applet_name "event manager applet ERSPAN_TIMER"
+    set applet_descr "description EMERGANCY ERSPAN stop timer"
+    set applet_event "event timer countdown time $emergancy_timer"
+    set applet_action1 "action 1.0 cli command \"en\""
+    set applet_action2 "action 2.0 cli command \"config t\""
+    set applet_action3 "action 3.0 cli command \"monitor session 15 type erspan-source\""
+    set applet_action4 "action 4.0 cli command \"shutdown\""
+    perform "no $applet_name" iosconfig
+    after 1000
+    debugputs "$applet_name "
+    debugputs "  $applet_descr "
+    debugputs "  $applet_event "
+    debugputs "  $applet_action1"
+    debugputs "  $applet_action2"
+    debugputs "  $applet_action3"
+    debugputs "  $applet_action4"
+    debugputs " end"
+    ios_config $applet_name $applet_event $applet_descr $applet_action1 $applet_action2 $applet_action3 $applet_action4 "end"
+    
+    perform "no ip access-list extended ERSPAN-FILTER" iosconfig
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
+    } else {
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
+    }
+    if { [info exists any_s_d] } {
+            ios_config "ip access-list extended ERSPAN-FILTER" "$any_s_d"
+            debugputs "ip access-list extended ERSPAN-FILTER $any_s_d"
+            set erspanacl "$any_s_d"
+    } else {
+            ios_config "ip access-list extended ERSPAN-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list extended ERSPAN-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
+            set erspanacl "$source_dest \n $dest_source"
+    }
+    debugputs "$monitor_session"
+    debugputs "  $monitor_description "
+    debugputs "  $monitor_source "
+    debugputs "  $monitor_filter "
+    debugputs "  no shutdown"
+    debugputs "  $monitor_destination"
+    debugputs "     $monitor_destip"
+    debugputs "     $monitor_id"
+    debugputs "     $monitor_origin"
+    debugputs "     $monitor_ttl "
+    debugputs "     exit"
+    debugputs "  $monitor_end"
+    ios_config $monitor_session $monitor_description $monitor_source $monitor_filter "no shut" $monitor_destination $monitor_destip $monitor_id $monitor_ttl monitor_end
+    ios_config $monitor_session $monitor_destination $monitor_origin
+    puts ""
+    puts [string repeat * 20]
+    puts "\n If ERSPAN is destined to local computer with wireshark in default location
+    you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
+    puts ""
+    puts [string repeat * 20]
+    puts ""
+    puts "Erspan session will run for $duration seconds"
+    puts ""
+    run_progress_bar $duration
+    puts "\n"
+    ios_config $monitor_session "shutdown"
+    debugputs "$monitor_session"
+    debugputs "  shutdown"
+    perform "no $monitor_session" iosconfig
+    perform "no ip access-list extended ERSPAN-FILTER" iosconfig
+    perform "no event manager applet ERSPAN_TIMER" iosconfig
+    puts "\nDone!\n"
+}
+
+
+proc erspan_setup {protocol ipsource ipdest erspandest {sinterface {}} {duration 30}} {
+    # version will determine which help to display
+    # Using switch loop to display correct filter, glob argument provides a regex like match
+    # bootflash is string argument passed to cli_filter_help
+    set version [getversion]
+    switch -glob $version {
+        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $duration}
+        45*  {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $duration}
+        38*  {cli_filter_help}
+        356* {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+        1004 {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+        100* {cli_filter_help}
+        default {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+    }
+}
 
 proc main {} {
     # If no arguments passed to program, display help function to provide help examples.
@@ -1017,6 +1183,28 @@ proc main {} {
     if {$::argc == 1 && [lindex $::argv 0] == "filter"} {
             cli_show_filters $version; return 
         }
+    if {([lindex $::argv 0] == "erspan" || [lindex $::argv 1] == "--debug") && $::argc < 5} {
+        puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\> <ERSPAN Destip>"; return
+    } else {
+        if {[lindex $::argv 0] == "erspan" && [lindex $::argv 1] == "--debug"} {
+            if {[lindex $::argv 0] == "erspan"} {
+                clear_screen 
+                global debug; set debug 1
+                erspan_setup [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6]
+                return
+            } else {
+                puts "\nInvalid option arrangment"; return
+            }
+        }
+    }
+
+    if {[lindex $::argv 0] == "erspan" && $::argc < 5} {
+        puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\> <ERSPAN Destip>"; return
+
+        clear_screen 
+        global debug; set debug 0
+        erspan_setup [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] 
+    }
     # debug will display commands used during program run
     if {[lindex $::argv 0] == "--debug"} {
         if {[expr $::argc < 4]} {
@@ -1029,7 +1217,7 @@ proc main {} {
             if {[expr $::argc == 4]} {
                 gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3]
             } else {
-                if {[expr $::argc <= 6]} {
+                if {[expr $::argc <= 7]} {
                 gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6] 
                 } else {
                 gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6] [lindex $::argv 7]
