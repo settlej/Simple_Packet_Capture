@@ -157,18 +157,42 @@ proc gatherinformation_and_begin_capture {version protocol ipsource ipdest {sint
     # if duration or size were not initially defined ask user
     if { $duration == {} || $size == {} } {
         if {$duration == {}} {
-             puts -nonewline "\nHow long to run capture? <1-300 seconds> \[Default=20\] : "
-             flush stdout
-             gets stdin {duration}
-                if {[string trim $duration] > 0} {
-                  } else {set duration 20;}
+            set valid_num 0
+            while {$valid_num == 0} {
+                puts -nonewline "\nHow long to run capture? <5-300 seconds> \[Default=20\] :  "
+                flush stdout
+                gets stdin {duration}
+                if {$duration == ""} {
+                    set duration 20
+                    incr valid_num
+                }
+                set results [verify_number_range [string trim $duration] 5 300]
+                if {$results == 0} {
+                    puts "Invalid Duration Time"
+                } else {
+                    incr valid_num
+                }
+            }
         }
         if {$size == {}} {
-            puts -nonewline "\nMax Capture size? <1-50 MB> \[Default=10\] : "
-            flush stdout
-            gets stdin {size}
-            if {[string trim $size] > 0} {} else {set size 10}
+            set valid_num 0
+            while {$valid_num == 0} {
+               puts -nonewline "\nMax Capture size? <1-50 MB> \[Default=10\] : "
+               flush stdout
+               gets stdin {size}
+               if {$size == ""} {
+                   set size 10
+                   incr valid_num
+               }
+               set results [verify_number_range [string trim $size] 1 50]
+                   if {$results == 0} {
+                       puts "Invalid Size"
+                   } else {
+                       incr valid_num
+                   }
             }
+            if {[string trim $size] > 0} {} else {set size 10}
+        }
         startcapture $version $protocol $ipsource $ipdest $ctype $sinterface $duration $size $mtu
     } else {
         startcapture $version $protocol $ipsource $ipdest $ctype $sinterface $duration $size $mtu
@@ -363,7 +387,7 @@ proc acl_generator {protocol ipsource ipdest} {
 # function to provide status of capture session
 proc check_capture_status {} {
     switch -glob $::version {
-        3* {set status [exec "show monitor capture point POINT"]}
+        356* {set status [exec "show monitor capture point POINT"]}
         default {set status [exec "show monitor capture CAPTURE"]} } 
     if {[regexp {Inactive} $status]} {
         # capture is not operational
@@ -1016,7 +1040,6 @@ proc getversion {} {
     if {[regexp {\d\d\d\d*} $found_version]} {
         global version
         set version [lindex [regexp -inline {\d\d\d\d} $found_version] 0]
-        puts "Device version: $version"
         return "$version"
     } else {
         puts "Unable to determine platform. "
@@ -1024,8 +1047,9 @@ proc getversion {} {
     }
 }
 
-proc erspan_16code {protocol ipsource ipdest erspandest {sinterface {}} {duration 30}} {
-    if {$sinterface == {}} {
+proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""}} {
+
+    if {$sinterface == ""} {
         # If interface not provide at start ask for interface
         puts "\nAvailable Interfaces:"
         # Grab interfaces from "show ip interface brief" and using regex to grap interface names into a list
@@ -1053,26 +1077,69 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface {}} {duratio
            if {[lsearch -exact $foundinterfaces "$sinterface"] == -1} { puts "\nInterface Not found...\n"} else {incr i}
         }
     }
-    set ipaddress_available [perform "show ip int br | i Loopback"]
-    if {$ipaddress_available != ""} {
-        set originip [lindex [regexp -all -inline {\S+} $line] 1]
-    } else {
-        puts -nonewline "Unable to located loopback IP.  What ip will the ERSPAN session use as source IP:  "
-        flush stdout
-        gets stdin {originip}
-    } 
-    if {$duration == 30} {
-        puts -nonewline "For safety measure how long to run ERSPAN, in seconds <5-300 recommended> \[Default 30\]:  "
-        flush stdout
-        gets stdin {duration}
-        if {$duration == ""} {
-            set duration 30
+    if {$originip == ""} {
+        set ipaddress_available [perform "show ip int br | i Loopback"]
+        set valid_ip 0
+        if {$ipaddress_available != "" && [lindex [regexp -all -inline {\S+} $ipaddress_available] 1] != "unassigned"} {
+            set originip [lindex [regexp -all -inline {\S+} $ipaddress_available] 1]
+        } else {
+            while {$valid_ip < 1} {
+                puts -nonewline "Unable to located loopback IP.  What ip will the ERSPAN session use as source IP:  "
+                flush stdout
+                gets stdin {originip}
+                set valid_ip [verify_valid_ip $originip]
+            }
         }
+    }
+    if {$duration == ""} {
+        set valid_num 0
+        while {$valid_num == 0} {
+            puts -nonewline "For safety measure how long to run ERSPAN, in seconds <5-300 recommended> \[Default 30\]:  "
+            flush stdout
+            gets stdin {duration}
+            if {$duration == ""} {
+                set duration 30
+                incr valid_num
+            }
+            set results [verify_number_range $duration 5 300]
+            if {$results == 0} {
+                puts "Invalid Duration Time"
+            } else {
+                incr valid_num
+            }
+        }
+    }
+    puts "\n"
+    puts [string repeat * 50]
+    puts "ERSPAN Montior Interface: $sinterface "
+    if { $ipsource == "any" && $ipdest == "any" } {
+        puts "ERSPAN ACL: $protocol any any"
+    } else {
+        puts "ERSPAN ACL: $protocol $ipsource $ipdest 
+             $protocol $ipdest $ipsource"
+    }
+    puts "ERSPAN Destination: $erspandest "
+    puts "ERSPAN Origin IP: $originip "
+    puts "ERSPAN max duration: $duration sec"
+    puts [string repeat * 50]
+    puts "\n"
+    puts ""
+    puts -nonewline "Start? \[yes\|no\]: "
+    flush stdout
+    gets stdin {start}
+    switch -glob $start {
+      y* {puts "\nStarting..."}
+      default { puts "\nCanceling!"; return }
     }
     # Monitor session variables
     set monitor_session "monitor session 15 type erspan-source"
     set monitor_description "description tcl created erspan via wireshark program"
-    set monitor_source "source interface $sinterface both"
+    if {[regexp {[V|v]lan} $sinterface]} {
+        set vlannum [string range $sinterface 4 end]
+        set monitor_source "source vlan $vlannum both"
+    } else {
+        set monitor_source "source interface $sinterface both"
+    }
     set monitor_filter "filter ip access-group ERSPAN-FILTER"
     set monitor_destination "destination"
     set monitor_destip "ip address $erspandest"
@@ -1081,26 +1148,28 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface {}} {duratio
     set monitor_ttl "ip ttl 10"
     set monitor_end "end"
     # Applet EEM variables
-    set emergancy_timer [expr $duration + 10]
+    set emergancy_timer [expr $duration + 5]
     set applet_name "event manager applet ERSPAN_TIMER"
     set applet_descr "description EMERGANCY ERSPAN stop timer"
-    set applet_event "event timer countdown time $emergancy_timer"
+    set applet_event "event timer countdown time $emergancy_timer "
     set applet_action1 "action 1.0 cli command \"en\""
     set applet_action2 "action 2.0 cli command \"config t\""
     set applet_action3 "action 3.0 cli command \"monitor session 15 type erspan-source\""
     set applet_action4 "action 4.0 cli command \"shutdown\""
+    set applet_action5 "action 5.0 syslog msg \" STOPPING ERSAPN\""
     perform "no $applet_name" iosconfig
     after 1000
     debugputs "$applet_name "
     debugputs "  $applet_descr "
-    debugputs "  $applet_event "
+    debugputs "  $applet_event"
     debugputs "  $applet_action1"
     debugputs "  $applet_action2"
     debugputs "  $applet_action3"
     debugputs "  $applet_action4"
-    debugputs " end"
-    ios_config $applet_name $applet_event $applet_descr $applet_action1 $applet_action2 $applet_action3 $applet_action4 "end"
-    
+    debugputs "  $applet_action5"
+    debugputs "  exit"
+    ios_config $applet_name $applet_descr $applet_action1 $applet_action2 $applet_action3 $applet_action4 $applet_action5 $applet_descr "exit"
+    ios_config $applet_name $applet_event "exit"
     perform "no ip access-list extended ERSPAN-FILTER" iosconfig
     set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
     if {[llength $aclresults] == 1} {
@@ -1135,11 +1204,11 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface {}} {duratio
     ios_config $monitor_session $monitor_description $monitor_source $monitor_filter "no shut" $monitor_destination $monitor_destip $monitor_id $monitor_ttl monitor_end
     ios_config $monitor_session $monitor_destination $monitor_origin
     puts ""
-    puts [string repeat * 20]
-    puts "\n If ERSPAN is destined to local computer with wireshark in default location
+    puts [string repeat * 50]
+    puts "\n    If ERSPAN is destined to local computer with wireshark in default location
     you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
     puts ""
-    puts [string repeat * 20]
+    puts [string repeat * 50]
     puts ""
     puts "Erspan session will run for $duration seconds"
     puts ""
@@ -1150,24 +1219,61 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface {}} {duratio
     debugputs "  shutdown"
     perform "no $monitor_session" iosconfig
     perform "no ip access-list extended ERSPAN-FILTER" iosconfig
-    perform "no event manager applet ERSPAN_TIMER" iosconfig
+    perform "no event manager applet ERSPAN_TIMER" iosconfig    
     puts "\nDone!\n"
 }
 
 
-proc erspan_setup {protocol ipsource ipdest erspandest {sinterface {}} {duration 30}} {
+proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""}} {
     # version will determine which help to display
     # Using switch loop to display correct filter, glob argument provides a regex like match
     # bootflash is string argument passed to cli_filter_help
     set version [getversion]
+    puts "Device version: $version"
     switch -glob $version {
-        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $duration}
-        45*  {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $duration}
-        38*  {cli_filter_help}
-        356* {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
-        1004 {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration}
+        45*  {erspan_4500_15code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration}
+        38*  {cli_filter_help} 
+        1004 { $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration}
         100* {cli_filter_help}
-        default {puts "CLI File Display on this device type is Unsupported. Must SCP to local Computer!"}
+        default {puts "ERSPAN setup not supported on this device!"}
+    }
+}
+
+proc verify_valid_ip {ip} {
+    regexp {^(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(?:\.(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])){3}$} $ip match
+    if {[info exists match]} {
+       return 1
+   } else {
+       return 0
+   }
+}
+
+proc verify_number_range {provided beginning ending} {
+   set bresult [string is digit -strict $beginning]
+   set eresult [string is digit -strict $ending]
+   set rprovided [string is digit -strict $provided]
+   if {$bresult == 0 || $eresult == 0 || $rprovided == 0 } {
+       return 0
+   } else {
+       if {[expr $provided >= $beginning] == 1 && [expr $provided <= $ending] == 1} {
+           return 1
+       } else {
+           return 0
+       }
+
+   }
+}
+
+proc verify_valid_aclip {ip} {
+    if {$ip == "any"} {
+        return 1
+    }
+    set ipverify [verify_valid_ip $ip]
+    if {$ipverify == 1} {
+        return 1
+    } else {
+        return 0
     }
 }
 
@@ -1190,39 +1296,79 @@ proc main {} {
             if {[lindex $::argv 0] == "erspan"} {
                 clear_screen 
                 global debug; set debug 1
-                erspan_setup [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6]
+                eval erspan_setup [lrange $::argv 2 end]
                 return
             } else {
                 puts "\nInvalid option arrangment"; return
             }
         }
     }
-
     if {[lindex $::argv 0] == "erspan" && $::argc < 5} {
         puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\> <ERSPAN Destip>"; return
-
-        clear_screen 
+    } elseif {[lindex $::argv 0] == "erspan" && $::argc > 8} {
+        puts "\nToo Many arguments. \<protocol\> \<sourceip|any\> \<destip|any\> \<ERSPAN Destip\> \<Interface\> \<ERSPAN Sourceip\> \<duration\>"; return
+    } elseif {[lindex $::argv 0] == "erspan" && $::argc >= 5} {
         global debug; set debug 0
-        erspan_setup [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] 
+        set valid_acl_sourceip 0
+        set valid_acl_sourceip [verify_valid_aclip [lindex $::argv 2]]
+        if {$valid_acl_sourceip == 0} {
+            puts "Invalid ACL Source IP!"
+            return
+        }
+        set valid_acl_destip 0
+        set valid_acl_destip [verify_valid_aclip [lindex $::argv 3]]
+        if {$valid_acl_destip == 0} {
+            puts "Invalid ACL Destination IP!"
+            return
+        }
+        set valid_erspan_destip 0
+        set valid_erspan_destip [verify_valid_ip [lindex $::argv 4]]
+        if {$valid_erspan_destip == 0} {
+            puts "Invalid ERSPAN Destination IP!"
+            return
+        }
+        set valid_erspan_sourceip 0
+        if {$::argc >= 7} {
+            set valid_erspan_sourceip [verify_valid_ip [lindex $::argv 6]]
+            if {$valid_erspan_sourceip == 0} {
+                puts "Invalid ERSPAN Source IP!"
+                return
+            }
+            if {$::argc == 8} {
+                set results [verify_number_range [lindex $::argv 7] 5 300]
+                if {$results == 0} {
+                   puts "Invalid Duration Time"
+                   return
+                }
+            }
+        }
+        clear_screen 
+        eval erspan_setup [lrange $::argv 1 end]
+        return
+        #[lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] 
     }
-    # debug will display commands used during program run
+    #debug will display commands used during program run
     if {[lindex $::argv 0] == "--debug"} {
         if {[expr $::argc < 4]} {
             puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\>"; return
         } else {
+            if {$version == 0} { return }
+            set valid_acl_sourceip 0
+            set valid_acl_sourceip [verify_valid_aclip [lindex $::argv 2]]
+            if {$valid_acl_sourceip == 0} {
+                puts "Invalid ACL Source IP!"
+                return
+            }
+            set valid_acl_destip 0
+            set valid_acl_destip [verify_valid_aclip [lindex $::argv 3]]
+            if {$valid_acl_destip == 0} {
+                puts "Invalid ACL Destination IP!"
+                return
+            }
             clear_screen
             #turn on debug for stdout
             global debug; set debug 1; puts "\[Debugging mode\]"
-            if {$version == 0} { return }
-            if {[expr $::argc == 4]} {
-                gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3]
-            } else {
-                if {[expr $::argc <= 7]} {
-                gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6] 
-                } else {
-                gatherinformation_and_begin_capture $version [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6] [lindex $::argv 7]
-                }
-            }
+            eval gatherinformation_and_begin_capture $version [lrange $::argv 1 end]
         }
         return
     } else {
@@ -1232,17 +1378,21 @@ proc main {} {
         } else {
             #turn off debug for stdout
             global debug; set debug 0 
-            clear_screen
             if {$version == 0} { return }
-            if {[expr $::argc == 3]} {
-                gatherinformation_and_begin_capture $version [lindex $::argv 0] [lindex $::argv 1] [lindex $::argv 2]
-            } else {
-                if {[expr $::argc <= 6]} {
-                gatherinformation_and_begin_capture $version [lindex $::argv 0] [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] 
-                } else {
-                gatherinformation_and_begin_capture $version [lindex $::argv 0] [lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] [lindex $::argv 5] [lindex $::argv 6]
-                }
+            set valid_acl_sourceip 0
+            set valid_acl_sourceip [verify_valid_aclip [lindex $::argv 1]]
+            if {$valid_acl_sourceip == 0} {
+                puts "Invalid ACL Source IP!"
+                return
             }
+            set valid_acl_destip 0
+            set valid_acl_destip [verify_valid_aclip [lindex $::argv 2]]
+            if {$valid_acl_destip == 0} {
+                puts "Invalid ACL Destination IP!"
+                return
+            }
+            clear_screen
+            eval gatherinformation_and_begin_capture $version [lrange $::argv 0 end]
         }
     }    
 }
