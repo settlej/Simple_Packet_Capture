@@ -1048,7 +1048,7 @@ proc getversion {} {
     }
 }
 
-proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""}} {
+proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""} {silent ""}} {
 
     if {$sinterface == ""} {
         # If interface not provide at start ask for interface
@@ -1152,13 +1152,15 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
     puts ""
     #puts [string repeat * 50]
     puts ""
-    puts -nonewline "Start? \[yes\|no\]: "
-    flush stdout
-    gets stdin {start}
-    switch -glob $start {
-      y* {puts "\nStarting..."}
-      default { puts "\nCanceling!"; return }
-    }
+    if {[string trim $silent] != "silent"} {
+        puts -nonewline "Start? \[yes\|no\]: "
+        flush stdout
+        gets stdin {start}
+        switch -glob $start {
+          y* {puts "\nStarting..."}
+          default { puts "\nCanceling!"; return }
+        }
+    } else { puts "Silent Mode: on" }
     # Monitor session variables
     set monitor_session "monitor session 15 type erspan-source"
     set monitor_description "description tcl created erspan via wireshark program"
@@ -1252,17 +1254,17 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
 }
 
 
-proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""}} {
+proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""} {silent ""}} {
     # version will determine which help to display
     # Using switch loop to display correct filter, glob argument provides a regex like match
     # bootflash is string argument passed to cli_filter_help
     set version [getversion]
     puts "Device version: $version"
     switch -glob $version {
-        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
-        45*  {erspan_4500_15code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
-        38*  {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
-        1004 {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
+        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
+        45*  {erspan_4500_15code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
+        38*  {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
+        1004 {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
         100* {cli_filter_help}
         default {puts "ERSPAN setup not supported on this device!"}
     }
@@ -1343,7 +1345,7 @@ proc main {} {
     }
     if {[lindex $::argv 0] == "erspan" && $::argc < 5} {
         puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\> <ERSPAN Destip>"; return
-    } elseif {[lindex $::argv 0] == "erspan" && $::argc > 9} {
+    } elseif {[lindex $::argv 0] == "erspan" && $::argc > 10} {
         puts "\nToo Many arguments. \<protocol\> \<sourceip|any\> \<destip|any\> \<ERSPAN Destip\> \<Interface\> \<ERSPAN Sourceip\> \<duration\>"; return
     } elseif {[lindex $::argv 0] == "erspan" && $::argc >= 5} {
         global debug; set debug 0
