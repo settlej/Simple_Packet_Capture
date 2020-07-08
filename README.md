@@ -13,7 +13,7 @@ switch# wireshark </br>
 
  Examples:
      [syntax] wireshark <protocol> <source_ip:[port]> <dest_ip:[port]> <capture_type> <duration_seconds> <capture_size_MB> <mtu>
-
+        
          wireshark ip any any 
          wireshark ip 192.168.25.2 any
          wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1
@@ -29,7 +29,15 @@ switch# wireshark </br>
          wireshark udp 192.168.25.2 any
          wireshark udp 192.168.25.2 192.168.30.20:53 Gi1/0/1
          wireshark udp 192.168.25.2:53 192.168.30.20 Gi1/0/1 40 10
-    
+ 
+         [syntax] wireshark erspan <protocol> <source_ip> <dest_ip> <collector ip> <monitor interface> <ERSPAN source ip> <max duration sec> <direction>
+         wireshark erspan ip any any
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1 2.2.2.2
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1 2.2.2.2 50
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1 2.2.2.2 50 rx
+         wireshark erspan --debug tcp any any 172.33.11.23
+
          ***If you want display pcap on cli examples:
          wireshark filter
 
