@@ -991,12 +991,13 @@ proc displayhelp {} {
          wireshark udp 192.168.25.2 192.168.30.20:53 Gi1/0/1
          wireshark udp 192.168.25.2:53 192.168.30.20 Gi1/0/1 40 10
  
-         \[syntax\] wireshark erspan <protocol> <source_ip> <dest_ip> <monitor interface> <max duration sec>
+         \[syntax\] wireshark erspan <protocol> <source_ip> <dest_ip> <collector ip> <monitor interface> <ERSPAN source ip> <max duration sec> \<direction\>
          wireshark erspan ip any any
-         wireshark erspan ip any any Gi1/0/1
-         wireshark erspan ip any any Gi1/0/1 192.168.1.100
-         wireshark erspan ip any any Gi1/0/1 192.168.1.100 50
-         wireshark erspan --debug tcp any any
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1 2.2.2.2
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1 2.2.2.2 50
+         wireshark erspan ip any any 172.33.11.23 Gi1/0/1 2.2.2.2 50 rx
+         wireshark erspan --debug tcp any any 172.33.11.23
 
          ***If you want display pcap on cli examples:
          wireshark filter
@@ -1047,7 +1048,7 @@ proc getversion {} {
     }
 }
 
-proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""}} {
+proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""}} {
 
     if {$sinterface == ""} {
         # If interface not provide at start ask for interface
@@ -1084,9 +1085,12 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
             set originip [lindex [regexp -all -inline {\S+} $ipaddress_available] 1]
         } else {
             while {$valid_ip < 1} {
-                puts -nonewline "Unable to located loopback IP.  What ip will the ERSPAN session use as source IP:  "
+                puts -nonewline "Unable to located loopback IP.  What ip will the ERSPAN session use as source IP \[Default=1.1.1.1\] :  "
                 flush stdout
                 gets stdin {originip}
+                if {$originip == ""} {
+                    set originip "1.1.1.1"
+                }
                 set valid_ip [verify_valid_ip $originip]
             }
         }
@@ -1109,20 +1113,44 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
             }
         }
     }
+    if {$direction == ""} {
+        set transmit 0
+        while {$transmit == 0} {
+            puts -nonewline "Capture Direction (rx,tx,both) \[Default=both\]:  "
+            flush stdout
+            gets stdin {direction}
+            if {$direction == ""} {
+                set direction both
+                incr transmit
+            }
+            if {[string trim $direction] == "rx" || [string trim $direction] == "tx" || [string trim $direction] == "both"} {
+                incr transmit
+            } else {
+                puts "Invalid direction"
+            }
+        }
+    }
     puts "\n"
     puts [string repeat * 50]
     puts "ERSPAN Montior Interface: $sinterface "
+    puts "ERSPAN Direction Cap: $direction"
     if { $ipsource == "any" && $ipdest == "any" } {
         puts "ERSPAN ACL: $protocol any any"
     } else {
         puts "ERSPAN ACL: $protocol $ipsource $ipdest 
-             $protocol $ipdest $ipsource"
+            $protocol $ipdest $ipsource"
     }
     puts "ERSPAN Destination: $erspandest "
     puts "ERSPAN Origin IP: $originip "
     puts "ERSPAN max duration: $duration sec"
     puts [string repeat * 50]
-    puts "\n"
+    puts ""
+    #puts [string repeat * 50]
+    puts "\n    If ERSPAN is destined to local computer with wireshark in default location
+    you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
+    puts "    \[IMPORTANT\] ERSPAN encapsulates with GRE headers, verify firewalls on network allow GRE traffic"
+    puts ""
+    #puts [string repeat * 50]
     puts ""
     puts -nonewline "Start? \[yes\|no\]: "
     flush stdout
@@ -1136,9 +1164,9 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
     set monitor_description "description tcl created erspan via wireshark program"
     if {[regexp {[V|v]lan} $sinterface]} {
         set vlannum [string range $sinterface 4 end]
-        set monitor_source "source vlan $vlannum both"
+        set monitor_source "source vlan $vlannum $direction"
     } else {
-        set monitor_source "source interface $sinterface both"
+        set monitor_source "source interface $sinterface $direction"
     }
     set monitor_filter "filter ip access-group ERSPAN-FILTER"
     set monitor_destination "destination"
@@ -1203,12 +1231,12 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
     debugputs "  $monitor_end"
     ios_config $monitor_session $monitor_description $monitor_source $monitor_filter "no shut" $monitor_destination $monitor_destip $monitor_id $monitor_ttl monitor_end
     ios_config $monitor_session $monitor_destination $monitor_origin
-    puts ""
-    puts [string repeat * 50]
-    puts "\n    If ERSPAN is destined to local computer with wireshark in default location
-    you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
-    puts ""
-    puts [string repeat * 50]
+    #puts ""
+    #puts [string repeat * 50]
+    #puts "\n    If ERSPAN is destined to local computer with wireshark in default location
+    #you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
+    #puts ""
+    #puts [string repeat * 50]
     puts ""
     puts "Erspan session will run for $duration seconds"
     puts ""
@@ -1224,17 +1252,17 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
 }
 
 
-proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""}} {
+proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""}} {
     # version will determine which help to display
     # Using switch loop to display correct filter, glob argument provides a regex like match
     # bootflash is string argument passed to cli_filter_help
     set version [getversion]
     puts "Device version: $version"
     switch -glob $version {
-        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration}
-        45*  {erspan_4500_15code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration}
-        38*  {cli_filter_help} 
-        1004 { $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration}
+        9*   {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
+        45*  {erspan_4500_15code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
+        38*  {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
+        1004 {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction}
         100* {cli_filter_help}
         default {puts "ERSPAN setup not supported on this device!"}
     }
@@ -1272,9 +1300,19 @@ proc verify_valid_aclip {ip} {
     set ipverify [verify_valid_ip $ip]
     if {$ipverify == 1} {
         return 1
+    } 
+    if {[string match *:* $ip]} {
+        set dividedstring [split $ip :]
+        if {[lindex $dividedstring 0] == "any" && [string is digit -strict [lindex $dividedstring 1]]} {
+            return 1
+        }
+        if {[verify_valid_ip [lindex $dividedstring 0]] && [string is digit -strict [lindex $dividedstring 1]]} {
+            return 1
+        }    
     } else {
         return 0
     }
+    return 0
 }
 
 proc main {} {
@@ -1305,7 +1343,7 @@ proc main {} {
     }
     if {[lindex $::argv 0] == "erspan" && $::argc < 5} {
         puts "\nMissing one of the required arguments \<protocol\> \<sourceip|any\> \<destip|any\> <ERSPAN Destip>"; return
-    } elseif {[lindex $::argv 0] == "erspan" && $::argc > 8} {
+    } elseif {[lindex $::argv 0] == "erspan" && $::argc > 9} {
         puts "\nToo Many arguments. \<protocol\> \<sourceip|any\> \<destip|any\> \<ERSPAN Destip\> \<Interface\> \<ERSPAN Sourceip\> \<duration\>"; return
     } elseif {[lindex $::argv 0] == "erspan" && $::argc >= 5} {
         global debug; set debug 0
@@ -1345,7 +1383,6 @@ proc main {} {
         clear_screen 
         eval erspan_setup [lrange $::argv 1 end]
         return
-        #[lindex $::argv 1] [lindex $::argv 2] [lindex $::argv 3] [lindex $::argv 4] 
     }
     #debug will display commands used during program run
     if {[lindex $::argv 0] == "--debug"} {
