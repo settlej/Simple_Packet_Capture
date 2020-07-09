@@ -6,7 +6,9 @@ Upload capture_program.tcl to flash of Cisco device</br>
 <b>scp capture_program.tcl \<username>@\<deviceip>:capture_program.tcl</b></br>
 </br>
 <b>config t</b></br>
-<b>alias exec wireshark tclsh flash:capture_program.tcl</b>
+<b>alias exec wireshark tclsh flash:capture_program.tcl</b><br>
+or<br>
+<b>alias exec wireshark tclsh bootflash:capture_program.tcl</b>
 
 # Usage
 switch# wireshark </br>
