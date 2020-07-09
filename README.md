@@ -1,5 +1,5 @@
 # Simple_Packet_Capture
-TCL script to automate Embedded Packet Capture (EPC) in Cisco platforms
+TCL script to automate Embedded Packet Capture (EPC) and ERSPAN in Cisco platforms
 
 
 Upload capture_program.tcl to flash on Cisco device</br>
