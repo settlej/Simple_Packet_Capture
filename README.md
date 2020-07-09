@@ -15,8 +15,9 @@ or<br>
 switch# wireshark </br>
 
  Examples:
-     [syntax] wireshark <protocol> <source_ip:[port]> <dest_ip:[port]> <capture_type> <duration_seconds> <capture_size_MB> <mtu>
-        
+ 
+         [syntax] wireshark <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> <control|interface> <duration ses> <capture size MB> <packet-len>
+                                                                                                      20 sec           10 MB          172 mtu        
          wireshark ip any any 
          wireshark ip 192.168.25.2 any
          wireshark ip 192.168.25.2 192.168.30.20 Gi1/0/1
