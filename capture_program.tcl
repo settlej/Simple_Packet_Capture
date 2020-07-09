@@ -28,12 +28,12 @@
 ###############################################################################
 #
 # Created to simplify packet capture program on Cisco devices that support
-# native packet capture.  Many Cisco platforms reqiure different commands 
+# native packet capture.  Many Cisco platforms require different commands 
 # to start packet capture.  There was also the issue of requiring 
 # multiple commands up to 14 different commands to start capturing. This is
-# depending on how grainularity of capture.  This project was created to simplify
+# depending on how granularity of capture.  This project was created to simplify
 # said operations in a "common" user friendly interface on any supported
-# platform.  Capture can happen in just 2 user inputs (initial decleration and 
+# platform.  Capture can happen in just 2 user inputs (initial deceleration and 
 # approving capture confirmation)
 #
 ###############################################################################
