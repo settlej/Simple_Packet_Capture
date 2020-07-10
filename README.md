@@ -46,7 +46,7 @@ switch# wireshark </br>
          wireshark filter
 
          ***If you want to see commands used:
-         wireshark --debug <protocol> <source_ip:\[port\]> <dest_ip:\[port\]> (including remainder options)
+         wireshark --debug <protocol> <source_ip:[port]> <dest_ip:[port]> (including remainder options)
        
          Supported platfroms:
          CSR1000v, ASR1004, 3560, 3850, 4400, 4500 (sup-8), 9300, 9400
