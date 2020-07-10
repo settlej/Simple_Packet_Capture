@@ -1253,6 +1253,213 @@ proc erspan_16code {protocol ipsource ipdest erspandest {sinterface ""} {origini
     puts "\nDone!\n"
 }
 
+proc erspan_4500_15code {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""} {silent ""}} {
+
+    if {$sinterface == ""} {
+        # If interface not provide at start ask for interface
+        puts "\nAvailable Interfaces:"
+        # Grab interfaces from "show ip interface brief" and using regex to grap interface names into a list
+        set foundinterfaces [regexp -all -inline {[A-Za-z-]+\d\/?\d?\/?\d?\/?\d?\d?} [exec "show ip int br"]] 
+        # find longest interface name for padding on display, used in format below
+        set largestinterfacesize [expr [getlargest_interface $foundinterfaces] + 2]
+        foreach {a b c d e} [join $foundinterfaces " "] {
+            # add padding for clean looking screen display
+            set a [format {%-*s} $largestinterfacesize  $a]
+            set b [format {%-*s} $largestinterfacesize  $b]
+            set c [format {%-*s} $largestinterfacesize  $c]
+            set d [format {%-*s} $largestinterfacesize  $d]
+            set e [format {%-*s} $largestinterfacesize  $e]
+            # creates 5 column print based on padding
+            puts "$a $b $c $d $e"} 
+        set i 0
+        puts " "
+        while {$i < 1} {
+           puts "Which interface to ERSPAN Monitor \[exact name needed\]?"
+           puts -nonewline "\nSelection: "
+           flush stdout
+           gets stdin {sinterface}
+           if {$i > 0} {continue} else {}
+           # simple error checking via searching interface list with its exact name from user input
+           if {[lsearch -exact $foundinterfaces "$sinterface"] == -1} { puts "\nInterface Not found...\n"} else {incr i}
+        }
+    }
+    if {$originip == ""} {
+        set ipaddress_available [perform "show ip int br | i Loopback"]
+        set valid_ip 0
+        if {$ipaddress_available != "" && [lindex [regexp -all -inline {\S+} $ipaddress_available] 1] != "unassigned"} {
+            set originip [lindex [regexp -all -inline {\S+} $ipaddress_available] 1]
+        } else {
+            while {$valid_ip < 1} {
+                puts -nonewline "Unable to located loopback IP.  What ip will the ERSPAN session use as source IP \[Default=1.1.1.1\] :  "
+                flush stdout
+                gets stdin {originip}
+                if {$originip == ""} {
+                    set originip "1.1.1.1"
+                }
+                set valid_ip [verify_valid_ip $originip]
+            }
+        }
+    }
+    if {$duration == ""} {
+        set valid_num 0
+        while {$valid_num == 0} {
+            puts -nonewline "For safety measure how long to run ERSPAN, in seconds <5-300 recommended> \[Default 30\]:  "
+            flush stdout
+            gets stdin {duration}
+            if {$duration == ""} {
+                set duration 30
+                incr valid_num
+            }
+            set results [verify_number_range $duration 5 300]
+            if {$results == 0} {
+                puts "Invalid Duration Time"
+            } else {
+                incr valid_num
+            }
+        }
+    }
+    if {$direction == ""} {
+        set transmit 0
+        while {$transmit == 0} {
+            puts -nonewline "Capture Direction (rx,tx,both) \[Default=both\]:  "
+            flush stdout
+            gets stdin {direction}
+            if {$direction == ""} {
+                set direction both
+                incr transmit
+            }
+            if {[string trim $direction] == "rx" || [string trim $direction] == "tx" || [string trim $direction] == "both"} {
+                incr transmit
+            } else {
+                puts "Invalid direction"
+            }
+        }
+    }
+    puts "\n"
+    puts [string repeat * 50]
+    puts "ERSPAN Montior Interface: $sinterface "
+    puts "ERSPAN Direction Cap: $direction"
+    if { $ipsource == "any" && $ipdest == "any" } {
+        puts "ERSPAN ACL: $protocol any any"
+    } else {
+        puts "ERSPAN ACL: $protocol $ipsource $ipdest 
+            $protocol $ipdest $ipsource"
+    }
+    puts "ERSPAN Destination: $erspandest "
+    puts "ERSPAN Origin IP: $originip "
+    puts "ERSPAN max duration: $duration sec"
+    puts [string repeat * 50]
+    puts ""
+    #puts [string repeat * 50]
+    puts "\n    If ERSPAN is destined to local computer with wireshark in default location
+    you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
+    puts "    \[IMPORTANT\] ERSPAN encapsulates with GRE headers, verify firewalls on network allow GRE traffic"
+    puts ""
+    #puts [string repeat * 50]
+    puts ""
+    if {[string trim $silent] != "silent"} {
+        puts -nonewline "Start? \[yes\|no\]: "
+        flush stdout
+        gets stdin {start}
+        switch -glob $start {
+          y* {puts "\nStarting..."}
+          default { puts "\nCanceling!"; return }
+        }
+    } else { puts "Silent Mode: on" }
+    # Monitor session variables
+    set monitor_session "monitor session 15 type erspan-source"
+    set monitor_description "description tcl created erspan via wireshark program"
+    if {[regexp {[V|v]lan} $sinterface]} {
+        set vlannum [string range $sinterface 4 end]
+        set monitor_source "source vlan $vlannum $direction"
+    } else {
+        set monitor_source "source interface $sinterface $direction"
+    }
+    set monitor_filter "filter ip access-group ERSPAN-FILTER"
+    set monitor_destination "destination"
+    set monitor_destip "ip address $erspandest"
+    set monitor_id "erspan-id 15"
+    set monitor_origin "origin ip address $originip"
+    set monitor_ttl "erspan ttl 10"
+    set monitor_end "end"
+    # Applet EEM variables
+    set emergancy_timer [expr $duration + 5]
+    set applet_name "event manager applet ERSPAN_TIMER"
+    set applet_descr "description EMERGANCY ERSPAN stop timer"
+    set applet_event "event timer countdown time $emergancy_timer "
+    set applet_action1 "action 1.0 cli command \"en\""
+    set applet_action2 "action 2.0 cli command \"config t\""
+    set applet_action3 "action 3.0 cli command \"monitor session 15 type erspan-source\""
+    set applet_action4 "action 4.0 cli command \"shutdown\""
+    set applet_action5 "action 5.0 syslog msg \" STOPPING ERSAPN\""
+    perform "no $applet_name" iosconfig
+    after 1000
+    debugputs "$applet_name "
+    debugputs "  $applet_descr "
+    debugputs "  $applet_event"
+    debugputs "  $applet_action1"
+    debugputs "  $applet_action2"
+    debugputs "  $applet_action3"
+    debugputs "  $applet_action4"
+    debugputs "  $applet_action5"
+    debugputs "  exit"
+    ios_config $applet_name $applet_descr $applet_action1 $applet_action2 $applet_action3 $applet_action4 $applet_action5 $applet_descr "exit"
+    ios_config $applet_name $applet_event "exit"
+    perform "no ip access-list extended ERSPAN-FILTER" iosconfig
+    set aclresults [split [acl_generator $protocol $ipsource $ipdest] ":"]
+    if {[llength $aclresults] == 1} {
+      set any_s_d [lindex $aclresults 0]
+    } else {
+      set source_dest [lindex $aclresults 0]
+      set dest_source [lindex $aclresults 1]
+    }
+    if { [info exists any_s_d] } {
+            ios_config "ip access-list extended ERSPAN-FILTER" "$any_s_d"
+            debugputs "ip access-list extended ERSPAN-FILTER $any_s_d"
+            set erspanacl "$any_s_d"
+    } else {
+            ios_config "ip access-list extended ERSPAN-FILTER" "$source_dest" "$dest_source"
+            debugputs "ip access-list extended ERSPAN-FILTER"
+            debugputs "  $source_dest"
+            debugputs "  $dest_source"
+            set erspanacl "$source_dest \n $dest_source"
+    }
+    debugputs "$monitor_session"
+    debugputs "  $monitor_description "
+    debugputs "  $monitor_source "
+    debugputs "  $monitor_filter "
+    debugputs "  no shutdown"
+    debugputs "  $monitor_destination"
+    debugputs "     $monitor_destip"
+    debugputs "     $monitor_id"
+    debugputs "     $monitor_origin"
+    debugputs "     exit"
+    debugputs "    $monitor_ttl "
+    debugputs "     exit"
+    debugputs "  $monitor_end"
+    ios_config $monitor_session $monitor_description $monitor_source $monitor_filter "no shut" $monitor_destination $monitor_destip $monitor_id monitor_end
+    ios_config $monitor_session $monitor_destination $monitor_origin
+    ios_config $monitor_ttl
+    #puts ""
+    #puts [string repeat * 50]
+    #puts "\n    If ERSPAN is destined to local computer with wireshark in default location
+    #you can open 'CMD' or 'Powershell' \: \"C:\\Program Files\\Wireshark\\Wireshark.exe\" -f \"ip proto 0x2f\""
+    #puts ""
+    #puts [string repeat * 50]
+    puts ""
+    puts "Erspan session will run for $duration seconds"
+    puts ""
+    run_progress_bar $duration
+    puts "\n"
+    ios_config $monitor_session "shutdown"
+    debugputs "$monitor_session"
+    debugputs "  shutdown"
+    perform "no $monitor_session" iosconfig
+    perform "no ip access-list extended ERSPAN-FILTER" iosconfig
+    perform "no event manager applet ERSPAN_TIMER" iosconfig    
+    puts "\nDone!\n"
+}
+
 
 proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip ""} {duration ""} {direction ""} {silent ""}} {
     # version will determine which help to display
