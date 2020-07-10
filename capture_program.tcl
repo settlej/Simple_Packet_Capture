@@ -1472,7 +1472,7 @@ proc erspan_setup {protocol ipsource ipdest erspandest {sinterface ""} {originip
         45*  {erspan_4500_15code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
         38*  {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
         1004 {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
-        100* {cli_filter_help}
+        100* {erspan_16code $protocol $ipsource $ipdest $erspandest $sinterface $originip $duration $direction $silent}
         default {puts "ERSPAN setup not supported on this device!"}
     }
 }
