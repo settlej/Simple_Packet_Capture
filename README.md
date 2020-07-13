@@ -12,7 +12,8 @@ or<br>
 <b>alias exec wireshark tclsh bootflash:capture_program.tcl</b>
 
 # Supported Platforms
-CSR1000v, ASR1004, 3560, 3850, 4400, 4500 (sup-8), 9300, 9400
+CSR1000v, ASR1004, 3560, 3850, 4400, 4500 (sup-8), 9300, 9400.
+
 Version of code is 15.X or later code, recommended 16.x code.  ERSPAN maybe limited on older platforms.
 
 # Usage
